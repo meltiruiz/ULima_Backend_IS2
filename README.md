@@ -12,7 +12,7 @@ Backend oficial de ULima++, construido con una arquitectura moderna basada en Ty
 | **TypeScript**    | Lenguaje principal                 |
 | **Hono**          | Framework API REST                 |
 | **Drizzle ORM**   | ORM tipado para PostgreSQL         |
-| **Neon PostgreSQL** | Base de datos serverless          |
+| **AWS RDS PostgreSQL** | Base de datos relacional          |
 | **Zod**           | Validación de datos                |
 | **JWT**           | Autenticación                      |
 | **bcryptjs**      | Hash de contraseñas                |
@@ -33,7 +33,7 @@ Services
     ↓
 Drizzle ORM
     ↓
-Neon PostgreSQL
+AWS RDS PostgreSQL
 ```
 
 ---
@@ -117,7 +117,7 @@ Más endpoints se definirán conforme se implementen los módulos.
 
 ## Base de Datos
 
-- **Proveedor:** Neon PostgreSQL (serverless)
+- **Proveedor:** AWS RDS PostgreSQL
 - **ORM:** Drizzle ORM
 - **Migraciones:** Drizzle Kit
 - **Características:**
@@ -142,7 +142,7 @@ NODE_ENV=development
 
 | Variable       | Descripción                          |
 |----------------|--------------------------------------|
-| `DATABASE_URL` | URL de conexión a Neon PostgreSQL    |
+| `DATABASE_URL` | URL de conexión a PostgreSQL (AWS RDS)|
 | `JWT_SECRET`   | Clave secreta para firmar JWTs       |
 | `PORT`         | Puerto del servidor (default: 3000)  |
 | `NODE_ENV`     | Entorno de ejecución                 |
@@ -169,7 +169,7 @@ NODE_ENV=development
 ### Prerrequisitos
 
 - [Bun](https://bun.sh/) instalado
-- Cuenta en [Neon](https://neon.tech/) para PostgreSQL
+- Base de datos PostgreSQL alojada en [AWS RDS](https://aws.amazon.com/rds/postgresql/)
 
 ### Pasos
 
@@ -192,7 +192,7 @@ bun install
 cp .env.example .env
 ```
 
-Editar `.env` con tu `DATABASE_URL` de Neon.
+Editar `.env` con tu `DATABASE_URL` de AWS RDS.
 
 4. **Iniciar servidor en desarrollo**
 
