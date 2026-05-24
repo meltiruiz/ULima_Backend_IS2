@@ -1,6 +1,19 @@
-export const env = {
-  DATABASE_URL: process.env.DATABASE_URL ?? "",
-  JWT_SECRET: process.env.JWT_SECRET ?? "dev-secret-change-in-production",
-  PORT: parseInt(process.env.PORT ?? "3000", 10),
-  NODE_ENV: process.env.NODE_ENV ?? "development",
-} as const;
+import "dotenv/config";
+import { z } from "zod";
+
+const envSchema = z.object({
+  DATABASE_URL: z.string().url("DATABASE_URL debe ser una URL de conexión válida de PostgreSQL"),
+  JWT_SECRET: z.string().min(8, "JWT_SECRET debe tener al menos 8 caracteres"),
+  PORT: z.string().optional().transform((v) => parseInt(v ?? "3000", 10)),
+  NODE_ENV: z.enum(["development", "production", "test"]).optional().default("development"),
+});
+
+const parsed = envSchema.safeParse(process.env);
+
+if (!parsed.success) {
+  console.error("❌ Error de validación en las variables de entorno:");
+  console.error(JSON.stringify(parsed.error.format(), null, 2));
+  process.exit(1);
+}
+
+export const env = parsed.data;

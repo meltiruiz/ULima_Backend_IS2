@@ -1,7 +1,7 @@
-import "dotenv/config";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { config } from "./config/app-config";
 
 const app = new Hono();
 
@@ -18,7 +18,7 @@ app.get("/health", (c) => {
 // Cada módulo registrará sus rutas aquí cuando se implemente
 
 // --- Server start ---
-const PORT = parseInt(process.env.PORT ?? "3000", 10);
+const PORT = config.server.port;
 
 console.log(`ULima++ Backend iniciando en puerto ${PORT}...`);
 
