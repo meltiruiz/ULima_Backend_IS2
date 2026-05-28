@@ -1,295 +1,160 @@
 # ULima++ Backend
 
-Backend oficial de ULima++, construido con una arquitectura moderna basada en TypeScript y PostgreSQL.
+Backend oficial de ULima++: API REST en Bun/TypeScript/Hono para la app Flutter de estudiantes de la Universidad de Lima.
 
----
+## Estado Actual
 
-## Stack Tecnológico
+- La base de datos PostgreSQL definitiva ya existe y ya fue creada fuera del proyecto.
+- `src/db/schema/schema.ts` modela esa base definitiva con Drizzle.
+- `src/db/relations/index.ts` queda vacío por ahora; las relaciones se implementarán cuando una spec lo pida.
+- `src/events` queda listo como infraestructura mínima, sin observers de negocio activos.
+- Los módulos en `src/modules/**` están estructurados como stubs para que el equipo implemente feature por feature con specs.
+- No se deben crear tablas nuevas, ejecutar seeds ni cargar datos de JSON.
+- Los JSON del frontend son descartables y no se migran a PostgreSQL.
 
-| Tecnología        | Propósito                          |
-|-------------------|------------------------------------|
-| **Bun**           | Runtime JavaScript                 |
-| **TypeScript**    | Lenguaje principal                 |
-| **Hono**          | Framework API REST                 |
-| **Drizzle ORM**   | ORM tipado para PostgreSQL         |
-| **AWS RDS PostgreSQL** | Base de datos relacional          |
-| **Zod**           | Validación de datos                |
-| **JWT**           | Autenticación                      |
-| **bcryptjs**      | Hash de contraseñas                |
-| **Railway**       | Plataforma de deploy               |
+## Stack
 
----
+- Bun
+- TypeScript
+- Hono
+- Drizzle ORM
+- PostgreSQL
+- Zod
+- JWT
+- bcryptjs
 
-## Arquitectura General
+## Arquitectura
 
-```
-Flutter App
-    ↓
-Dio HTTP Client
-    ↓
-Hono REST API
-    ↓
-Services
-    ↓
-Drizzle ORM
-    ↓
-AWS RDS PostgreSQL
+Cada feature debe seguir esta separación:
+
+```text
+routes -> controller -> service -> repository -> db
 ```
 
----
+Responsabilidades:
 
-## Objetivos del Backend
+- `routes`: registra endpoints Hono y middlewares.
+- `controller`: adapta HTTP, valida DTOs y arma respuestas.
+- `service`: reglas de negocio y coordinación.
+- `repository`: consultas Drizzle/PostgreSQL.
+- `schemas`: validaciones Zod de entrada.
+- `types`: DTOs y tipos del módulo.
 
-- Centralizar toda la lógica académica.
-- Gestionar autenticación y autorización.
-- Manejar cálculos académicos y reglas de negocio.
-- Exponer una API REST para Flutter.
-- Gestionar persistencia con PostgreSQL.
-- Mantener una arquitectura escalable y modular.
+`src/server.ts` debe mantenerse delgado: middleware global, health check y registro de módulos.
 
----
+## Base De Datos Definitiva
 
-## Estructura del Proyecto
+El backend debe usar estas tablas como fuente de verdad:
 
+- `app_user`, `student`, `teacher`
+- `career`, `specialty`, `student_specialty`, `curriculum`
+- `course`, `curriculum_course`, `curriculum_course_specialty`, `course_prerequisite`
+- `student_curriculum_simulation`, `student_course_progress`
+- `academic_period`, `course_offering`, `syllabus`, `section`, `enrollment`
+- `section_representative`, `academic_week`, `schedule_session`
+- `course_advising_session`, `assessment_type`, `assessment`, `student_score`
+- `announcement`, `alert`
+
+Reglas importantes:
+
+- `app_user` solo representa cuentas que inician sesión.
+- `teacher` es información referencial; no hay login docente.
+- Roles válidos de app: `student`, `delegate`, `subdelegate`.
+- Delegado/subdelegado se deriva desde `section_representative`, no desde `app_user`.
+- `student_score` guarda notas personales no oficiales.
+- `academic_risk`: avance evaluado mayor a 55% y promedio personal menor a 10.5.
+- `high_load`: 3 o más evaluaciones en la misma semana académica.
+- `student_course_progress` es la fuente real para pintar avance de malla.
+- `student_curriculum_simulation` es solo capa visual/proyectada.
+
+## Reglas De Datos
+
+No hacer:
+
+- No ejecutar `db:push`, `db:migrate`, `db:seed` sin aprobación explícita.
+- No crear nuevas tablas para resolver una feature sin spec aprobada.
+- No cargar datos desde `assets/data/*.json`.
+- No insertar datos mock en PostgreSQL.
+- No usar promedios de sección para alertas de riesgo académico.
+
+Sí hacer:
+
+- Consultar la base definitiva con repositorios.
+- Validar entradas HTTP con Zod.
+- Usar `enrollment.status = 'active'` para vistas del ciclo actual.
+- Preservar escrituras reales del usuario cuando la feature lo requiera: notas personales, anuncios de representantes, alertas leídas, etc.
+
+## Módulos
+
+| Módulo | Objetivo |
+| --- | --- |
+| `auth` | Login, JWT, usuario actual y rol efectivo. |
+| `academic-profile` | Carrera, currículo y especialidades del estudiante. |
+| `curriculum` | Malla, prerrequisitos, progreso real y simulación visual. |
+| `grades` | Evaluaciones, notas personales y promedio calculado. |
+| `schedule` | Horario y evaluaciones por semana. |
+| `course-detail` | Detalle de sección, asesorías, anuncios y contactos. |
+| `alerts` | Alertas personales de riesgo académico y alta carga. |
+| `section-management` | Funciones de delegado/subdelegado. |
+
+## Specs
+
+Las specs viven en:
+
+```text
+specs/features/<feature>/<feature>.spec.md
 ```
-ulima-backend/
-│
-├── src/
-│   ├── db/
-│   │   ├── schema/          # Definición de tablas Drizzle
-│   │   ├── relations/       # Relaciones entre tablas
-│   │   ├── migrations/      # Migraciones generadas
-│   │   ├── seed/            # Datos de prueba
-│   │   └── index.ts         # Conexión a la base de datos
-│   │
-│   ├── modules/             # Dominios de la aplicación (por definir)
-│   ├── middleware/          # Middleware (auth, validación, etc.)
-│   ├── services/            # Servicios compartidos
-│   ├── utils/               # Utilidades generales
-│   ├── types/               # Tipos TypeScript globales
-│   ├── config/              # Configuración de entorno
-│   └── server.ts            # Punto de entrada del servidor
-│
-├── drizzle/                 # Migraciones generadas por Drizzle
-├── .env                     # Variables de entorno (no versionar)
-├── .env.example             # Ejemplo de variables de entorno
-├── .gitignore
-├── drizzle.config.ts        # Configuración de Drizzle Kit
-├── tsconfig.json
-├── package.json
-└── README.md
+
+El contrato REST del backend vive dentro del repo:
+
+```text
+docs/specs/api-contracts.md
 ```
 
----
+Antes de implementar una feature:
 
-## Principios Arquitectónicos
+1. Revisar `AGENTS.md`.
+2. Revisar `KNOWLEDGE.md`.
+3. Revisar `docs/specs/feature-index.md`.
+4. Actualizar o crear la spec de la feature.
+5. Actualizar el contrato REST si cambia API.
+6. Esperar aprobación explícita.
+7. Implementar solo dentro de los `targets` de la spec.
 
-### Modularidad
-
-Cada dominio de la aplicación tendrá su propio módulo independiente dentro de `src/modules/`.
-
-Los módulos se definirán una vez que se establezca el diseño completo del schema de la base de datos y las reglas de negocio.
-
-### Separación de Responsabilidades
-
-| Capa         | Responsabilidad                              |
-|--------------|----------------------------------------------|
-| **Routes**   | Definen endpoints HTTP dentro de cada módulo |
-| **Services** | Contienen la lógica de negocio               |
-| **Database** | Acceso a PostgreSQL mediante Drizzle ORM     |
-| **Middleware** | Autenticación, validación y seguridad      |
-
----
-
-## API REST
-
-El backend expondrá endpoints REST consumidos por la app Flutter.
-
-Endpoints actuales:
-
-```
-GET    /health
-```
-
-Más endpoints se definirán conforme se implementen los módulos.
-
----
-
-## Base de Datos
-
-- **Proveedor:** AWS RDS PostgreSQL
-- **ORM:** Drizzle ORM
-- **Migraciones:** Drizzle Kit
-- **Características:**
-  - Relaciones complejas entre entidades académicas
-  - Integridad referencial
-  - Migraciones automáticas
-  - Tipado fuerte mediante TypeScript
-  - Escalabilidad serverless
-
----
-
-## Variables de Entorno
-
-Crear un archivo `.env` basado en `.env.example`:
+## Variables De Entorno
 
 ```env
-DATABASE_URL=postgresql://user:password@host:5432/ulima_db?sslmode=require
-JWT_SECRET=your-super-secret-jwt-key-change-in-production
+DATABASE_URL=postgresql://user:password@host:5432/postgres?sslmode=require
+JWT_SECRET=your-super-secret-jwt-key
 PORT=3000
 NODE_ENV=development
 ```
 
-| Variable       | Descripción                          |
-|----------------|--------------------------------------|
-| `DATABASE_URL` | URL de conexión a PostgreSQL (AWS RDS)|
-| `JWT_SECRET`   | Clave secreta para firmar JWTs       |
-| `PORT`         | Puerto del servidor (default: 3000)  |
-| `NODE_ENV`     | Entorno de ejecución                 |
-
----
-
-## Scripts Disponibles
-
-| Comando              | Descripción                              |
-|----------------------|------------------------------------------|
-| `bun run dev`        | Inicia servidor en modo desarrollo       |
-| `bun run build`      | Compila TypeScript a JavaScript          |
-| `bun run start`      | Inicia servidor en producción            |
-| `bun run db:generate`| Genera migraciones desde el schema       |
-| `bun run db:migrate` | Aplica migraciones a la base de datos    |
-| `bun run db:push`    | Sinc schema directo a DB (sin migraciones)|
-| `bun run db:studio`  | Abre Drizzle Studio (UI de base de datos)|
-| `bun run db:seed`    | Ejecuta seed de datos de prueba          |
-
----
-
-## Cómo Correr el Proyecto
-
-### Prerrequisitos
-
-- [Bun](https://bun.sh/) instalado
-- Base de datos PostgreSQL alojada en [AWS RDS](https://aws.amazon.com/rds/postgresql/)
-
-### Pasos
-
-1. **Clonar el repositorio**
-
-```bash
-git clone <repo-url>
-cd ULima_Backend_IS2
-```
-
-2. **Instalar dependencias**
+## Comandos
 
 ```bash
 bun install
-```
-
-3. **Configurar variables de entorno**
-
-```bash
-cp .env.example .env
-```
-
-Editar `.env` con tu `DATABASE_URL` de AWS RDS.
-
-4. **Iniciar servidor en desarrollo**
-
-```bash
 bun run dev
+bun run build
 ```
 
-El servidor estará disponible en `http://localhost:3000`.
-
-5. **Verificar health check**
-
-```bash
-curl http://localhost:3000/health
-```
-
----
-
-## Cómo Ejecutar Migraciones
-
-### Generar migraciones
+Comandos restringidos:
 
 ```bash
 bun run db:generate
-```
-
-### Aplicar migraciones
-
-```bash
 bun run db:migrate
+bun run db:push
+bun run db:seed
 ```
 
-### Abrir Drizzle Studio
+Solo usarlos con aprobación explícita del equipo porque la base ya existe.
+
+## Verificación
+
+Después de cambios TypeScript:
 
 ```bash
-bun run db:studio
+bun run build
 ```
 
----
-
-## Roadmap
-
-### Fase 1 - Configuración Base ✅
-- [x] Configuración Bun
-- [x] Configuración TypeScript
-- [x] Configuración Hono
-- [x] Configuración Drizzle
-- [x] Conexión Neon
-- [x] Estructura modular
-
-### Fase 2 - Schema y Base de Datos
-- [ ] Diseño completo del schema
-- [ ] Relaciones entre entidades
-- [ ] Migraciones iniciales
-- [ ] Seed de datos de prueba
-
-### Fase 3 - Autenticación
-- [ ] Registro de usuarios
-- [ ] Login con JWT
-- [ ] Roles (alumno, docente, admin)
-- [ ] Middleware de autenticación
-
-### Fase 4 - Endpoints Académicos
-- [ ] CRUD de cursos
-- [ ] Malla curricular
-- [ ] Evaluaciones
-- [ ] Registro de notas
-- [ ] Sistema de alertas
-
-### Fase 5 - Producción
-- [ ] Optimización de consultas
-- [ ] Seguridad avanzada
-- [ ] Testing
-- [ ] Deploy en Railway
-
----
-
-## Futuras Expansiones
-
-La arquitectura permitirá:
-
-- Dashboard web administrativo
-- Panel de gestión para docentes
-- IA para análisis académico predictivo
-- Notificaciones push
-- Integraciones con sistemas universitarios
-- Analytics y reportes
-- Microservicios futuros
-
----
-
-## Estado Actual
-
-El proyecto se encuentra en **etapa de inicialización de arquitectura backend**.
-
-La estructura modular está configurada y lista para comenzar el desarrollo de:
-- Schema de base de datos
-- Sistema de autenticación
-- Endpoints académicos
-
-No se han implementado endpoints funcionales ni lógica de negocio todavía.
+Cuando existan tests backend, la spec debe enlazarlos con `[@test]`.
