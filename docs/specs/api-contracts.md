@@ -67,15 +67,97 @@ Contrato REST local del backend ULima++. Mantener alineado manualmente con `ULim
 
 ## Academic Profile
 
-- `GET /academic-profile/me`
-- `GET /academic-profile/careers`
-- `GET /academic-profile/specialties?careerId={id}`
-- `PUT /academic-profile/me/specialties`
+### GET /academic-profile/me
+
+Perfil completo del estudiante autenticado.
+
+- **Auth**: Bearer token
+- **Response** `200 OK`:
+  ```json
+  {
+    "profile": {
+      "id": 1,
+      "studentId": 10,
+      "code": "20201234",
+      "fullName": "Nombre Apellido",
+      "institutionalEmail": "user@aloe.ulima.edu.pe",
+      "role": "student",
+      "currentLevel": 5,
+      "career": {
+        "id": 1,
+        "code": "ING-INF",
+        "name": "Ingeniería de Sistemas",
+        "faculty": "Facultad de Ingeniería"
+      },
+      "curriculum": {
+        "id": 1,
+        "name": "Currículo 2023"
+      },
+      "specialties": [
+        { "specialtyId": 1, "name": "Ingeniería de Software", "selectionType": "primary" },
+        { "specialtyId": 2, "name": "Ciencia de Datos", "selectionType": "interest" }
+      ]
+    }
+  }
+  ```
+- **Errors**: `401` `MISSING_TOKEN`, `401` `INVALID_TOKEN`, `404` `USER_NOT_FOUND`
+
+### GET /academic-profile/careers
+
+Todas las carreras disponibles.
+
+- **Auth**: Bearer token
+- **Response** `200 OK`:
+  ```json
+  {
+    "careers": [
+      { "id": 1, "code": "ING-INF", "name": "Ingeniería de Sistemas", "faculty": "Facultad de Ingeniería" }
+    ]
+  }
+  ```
+
+### GET /academic-profile/specialties
+
+Especialidades filtradas por carrera. Si `careerId` se omite, usa la carrera del estudiante autenticado.
+
+- **Auth**: Bearer token
+- **Query**: `?careerId={id}` (opcional)
+- **Response** `200 OK`:
+  ```json
+  {
+    "specialties": [
+      { "id": 1, "careerId": 1, "name": "Ingeniería de Software", "description": "..." }
+    ]
+  }
+  ```
+
+### PUT /academic-profile/me/specialties
+
+Reemplaza las especialidades activas del estudiante autenticado. Escribe en `student_specialty`.
+
+- **Auth**: Bearer token
+- **Request body**:
+  ```json
+  {
+    "primarySpecialtyId": 1,
+    "interestSpecialtyIds": [2, 3]
+  }
+  ```
+- **Response** `200 OK`:
+  ```json
+  {
+    "message": "Specialties updated",
+    "specialties": [
+      { "specialtyId": 1, "selectionType": "primary" },
+      { "specialtyId": 2, "selectionType": "interest" }
+    ]
+  }
+  ```
+- **Errors**: `400` `INVALID_BODY`, `404` `SPECIALTY_NOT_FOUND`, `409` `DUPLICATE_PRIMARY`
 
 Notas:
 
-- `PUT /academic-profile/me/specialties` escribe en `student_specialty`.
-- Si se permite cambiar carrera/curriculum, la spec debe definir reglas de compatibilidad antes de implementar.
+- No existe endpoint para cambiar carrera/curriculum en v1.
 
 ## Curriculum
 

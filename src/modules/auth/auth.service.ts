@@ -60,18 +60,21 @@ export class AuthService {
       select
         sec.id as section_id,
         sec.code as section_code,
+        cc.id as curriculum_course_id,
         c.id as course_id,
         c.name as course_name
       from enrollment e
       join section sec on sec.id = e.section_id
       join course_offering co on co.id = sec.course_offering_id
       join course c on c.id = co.course_id
+      left join curriculum_course cc on cc.course_id = c.id and cc.curriculum_id = ${row.curriculum_id}
       where e.student_id = ${row.student_id}
         and e.status = 'active'
       order by c.name, sec.code
     `) as unknown as Array<{
       section_id: number;
       section_code: string;
+      curriculum_course_id: number | null;
       course_id: number;
       course_name: string;
     }>;
@@ -105,8 +108,8 @@ export class AuthService {
         currentCourses: currentCourses.map((course) => ({
           idSeccion: String(course.section_id),
           codigoSeccion: course.section_code,
-          idCurso: String(course.course_id),
-          courseId: String(course.course_id),
+          idCurso: String(course.curriculum_course_id ?? course.course_id),
+          courseId: String(course.curriculum_course_id ?? course.course_id),
           nombre: course.course_name,
         })),
       },
