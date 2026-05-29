@@ -79,6 +79,7 @@ export const student = pgTable("student", {
   careerId: integer("career_id").notNull(),
   curriculumId: integer("curriculum_id").notNull(),
   currentLevel: integer("current_level"),
+  specialtySetupCompleted: boolean("specialty_setup_completed").notNull().default(false),
 }, (t) => ({
   uqStudentIdCareer: unique("uq_student_id_career").on(t.id, t.careerId),
   uqStudentIdCurriculum: unique("uq_student_id_curriculum").on(t.id, t.curriculumId),

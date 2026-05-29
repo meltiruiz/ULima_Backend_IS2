@@ -4,6 +4,7 @@ description: Login, logout and session management with JWT for ULima++ students
 targets:
   - ../../../src/modules/auth/**
   - ../../../src/shared/middleware/auth-middleware.ts
+  - ../../../src/db/schema/schema.ts
 ---
 
 # Authentication
@@ -23,6 +24,8 @@ targets:
 - `password` se verifica contra `app_user.password_hash` usando `bcryptjs.compare`.
 - Si `code` no existe → `401 USER_NOT_FOUND`.
 - Si `password` no coincide → `401 INVALID_PASSWORD`.
+- El usuario solo inicia sesión si existe como `student` y tiene al menos una matrícula `enrollment.status = 'active'`.
+- Si no tiene matrícula activa → `403 NOT_ENROLLED`.
 
 ### BR-AUTH-02: Role derivation
 - El rol del estudiante se determina al momento del login consultando `section_representative`.
@@ -33,7 +36,7 @@ targets:
 
 ### BR-AUTH-03: JWT session token
 - El token se firma con `HS256` usando `config.auth.jwtSecret`.
-- Expira en 24 horas (configurable vía `JWT_EXPIRES_IN` en entorno).
+- Expira en `config.auth.jwtExpiresIn` segundos (default `86400`, configurable vía `JWT_EXPIRES_IN`).
 - Payload mínimo del JWT:
 
 ```json
@@ -98,13 +101,16 @@ Autentica al estudiante y devuelve un JWT.
       "role": "student",
       "careerId": 1,
       "curriculumId": 1,
-      "currentLevel": 5
+      "currentLevel": 5,
+      "setupComplete": false,
+      "specialties": []
     }
   }
   ```
 - **Errors**:
   - `401` `USER_NOT_FOUND`: Código no registrado
   - `401` `INVALID_PASSWORD`: Contraseña incorrecta
+  - `403` `NOT_ENROLLED`: El estudiante no tiene matrícula activa
 
 ### GET /auth/me
 
@@ -123,7 +129,9 @@ Retorna los datos del estudiante autenticado.
       "role": "student",
       "careerId": 1,
       "curriculumId": 1,
-      "currentLevel": 5
+      "currentLevel": 5,
+      "setupComplete": false,
+      "specialties": []
     }
   }
   ```
@@ -177,16 +185,20 @@ El middleware `authMiddleware` en `src/shared/middleware/auth-middleware.ts` deb
 
 Agregar métodos:
 
-- `findByCodeWithPassword(code: string): Promise<{ id: number; userId: number; code: string; fullName: string; institutionalEmail: string; passwordHash: string; studentId: number; careerId: number; curriculumId: number; currentLevel: number | null } | null>`
+- `findByCodeWithPassword(code: string): Promise<AuthUserWithPassword | null>`
   - JOIN `app_user` con `student` donde `app_user.code = code`.
-  - Retorna todos los campos incluyendo `passwordHash`.
+  - Retorna datos de usuario, `passwordHash`, `setupComplete` desde `student.specialty_setup_completed`, especialidades activas y cursos activos.
+
+- `hasActiveEnrollment(studentId: number): Promise<boolean>`
+  - Verifica al menos una fila en `enrollment` con `student_id = studentId` y `status = 'active'`.
 
 - `findActiveRepresentation(studentId: number): Promise<{ position: 'delegate' | 'subdelegate' } | null>`
   - JOIN `enrollment` con `section_representative` donde `enrollment.studentId = studentId`, `enrollment.status = 'active'`, `section_representative.isActive = true`.
   - Si hay múltiples, prioriza `delegate`.
 
-- `findById(userId: number): Promise<{ id: number; studentId: number; code: string; fullName: string; institutionalEmail: string; careerId: number; curriculumId: number; currentLevel: number | null } | null>`
+- `findById(userId: number): Promise<AuthUser | null>`
   - JOIN `app_user` con `student` donde `app_user.id = userId`.
+  - Retorna datos de usuario, `setupComplete`, especialidades activas y cursos activos.
 
 ### auth.service.ts
 
@@ -197,9 +209,11 @@ Reemplazar implementación actual:
   2. Si no existe → `HttpError(401, ..., 'USER_NOT_FOUND')`.
   3. Compara password con `bcryptjs.compare(input.password, user.passwordHash)`.
   4. Si no coincide → `HttpError(401, ..., 'INVALID_PASSWORD')`.
-  5. Consulta `repository.findActiveRepresentation(user.studentId)` para determinar rol.
-  6. Firma JWT con `sub: user.id`, `studentId: user.studentId`, `code: user.code`, `role`.
-  7. Retorna `{ token, tokenType: 'Bearer', expiresIn: 86400, user }`.
+  5. Verifica matrícula activa con `repository.hasActiveEnrollment(user.studentId)`.
+  6. Si no tiene matrícula activa → `HttpError(403, ..., 'NOT_ENROLLED')`.
+  7. Consulta `repository.findActiveRepresentation(user.studentId)` para determinar rol.
+  8. Firma JWT con `sub: user.id`, `studentId: user.studentId`, `code: user.code`, `role`.
+  9. Retorna `{ token, tokenType: 'Bearer', expiresIn, user }`.
 
 - `me(userId: number)`:
   1. Llama a `repository.findById(userId)`.
@@ -223,17 +237,4 @@ Implementar la lógica completa de validación JWT (descrita en sección Auth Mi
 
 ## Test Links
 
-- Login con credenciales válidas retorna 200 con token y usuario
-  `[@test] ../../../tests/auth/login-valid-credentials.test.ts`
-- Login con código inexistente retorna 401 USER_NOT_FOUND
-  `[@test] ../../../tests/auth/login-user-not-found.test.ts`
-- Login con contraseña incorrecta retorna 401 INVALID_PASSWORD
-  `[@test] ../../../tests/auth/login-invalid-password.test.ts`
-- GET /me con token válido retorna 200 con datos del usuario
-  `[@test] ../../../tests/auth/me-valid-token.test.ts`
-- GET /me sin token retorna 401 MISSING_TOKEN
-  `[@test] ../../../tests/auth/me-missing-token.test.ts`
-- GET /me con token inválido retorna 401 INVALID_TOKEN
-  `[@test] ../../../tests/auth/me-invalid-token.test.ts`
-- POST /logout con token válido retorna 200
-  `[@test] ../../../tests/auth/logout-valid-token.test.ts`
+*(No hay tests existentes aún. Cuando se agreguen, enlazarlos aquí con `[@test]`.)*

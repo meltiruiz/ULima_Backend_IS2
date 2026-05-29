@@ -30,6 +30,7 @@ bun.lockb
 
 # Drizzle
 drizzle/*.sql
+!drizzle/0001_student_specialty_setup_completed.sql
 
 # Testing
 coverage/
