@@ -46,6 +46,17 @@ const PORT = config.server.port;
 
 console.log(`ULima++ Backend iniciando en puerto ${PORT}...`);
 
+if (typeof Bun === "undefined") {
+  import("@hono/node-server").then(({ serve }) => {
+    serve({
+      fetch: app.fetch,
+      port: PORT,
+    }, (info) => {
+      console.log(`Servidor Node.js escuchando en http://localhost:${info.port}`);
+    });
+  });
+}
+
 export default {
   port: PORT,
   fetch: app.fetch,

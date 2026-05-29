@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-rds-data": "^3.1053.0",
+    "@hono/node-server": "^2.0.4",
     "bcryptjs": "^2.4.3",
     "dotenv": "^16.4.0",
     "drizzle-orm": "^0.45.2",

@@ -15,6 +15,8 @@ export const errorHandler: ErrorHandler = (error, c) => {
     );
   }
 
+  console.error("Unhandled error:", error);
+
   return c.json(
     {
       error: {
