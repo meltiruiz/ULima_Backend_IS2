@@ -1,5 +1,5 @@
-import type { AcademicProfileService } from "./academic-profile.service";
 import type { Context } from "hono";
+import type { AcademicProfileService } from "./academic-profile.service";
 import { validateJson, validateQuery } from "../../shared/middleware/validate-dto";
 import { specialtiesQuerySchema, updateSpecialtiesSchema } from "./academic-profile.schemas";
 import type { AppRole } from "./academic-profile.types";
