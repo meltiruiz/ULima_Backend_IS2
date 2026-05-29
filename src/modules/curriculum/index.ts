@@ -14,5 +14,5 @@ export const curriculumRoutes = createCurriculumRoutes(curriculumController);
 export { CurriculumController } from "./curriculum.controller";
 export { CurriculumRepository } from "./curriculum.repository";
 export { CurriculumService } from "./curriculum.service";
-export { updateCourseProgressSchema } from "./curriculum.schemas";
+export { updateCourseProgressSchema, updateSimulationSchema } from "./curriculum.schemas";
 export type { CourseProgressStatus } from "./curriculum.types";
