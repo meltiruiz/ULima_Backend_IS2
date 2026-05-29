@@ -83,6 +83,85 @@ export class AuthService {
     const firstName = nameParts.length > 1 ? nameParts.slice(0, -1).join(" ") : row.full_name;
     const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : "";
 
+    // Query active specialties
+    const specialties = await this.repository.database.execute(sql`
+      select
+        sp.id as "specialtyId",
+        sp.name,
+        ss.selection_type as "selectionType"
+      from student_specialty ss
+      join specialty sp on sp.id = ss.specialty_id
+      where ss.student_id = ${row.student_id}
+        and ss.is_active = true
+    `) as unknown as Array<{ specialtyId: number; name: string; selectionType: "primary" | "interest" }>;
+
+    const principalSpecialty = specialties.find(s => s.selectionType === "primary");
+    const interestSpecialties = specialties.filter(s => s.selectionType === "interest").map(s => Number(s.specialtyId));
+
+    const especialidadPrincipal = principalSpecialty ? Number(principalSpecialty.specialtyId) : null;
+    const especialidadesInteres = interestSpecialties;
+    const especialidades = [
+      ...(especialidadPrincipal ? [especialidadPrincipal] : []),
+      ...especialidadesInteres,
+    ];
+
+    // Query real course progress (approved levels and approved electives)
+    const allCurriculumCourses = await this.repository.database.execute(sql`
+      select id, cycle as level, category
+      from curriculum_course
+      where curriculum_id = ${row.curriculum_id}
+    `) as unknown as Array<{ id: number; level: number; category: string }>;
+
+    const approvedCourses = await this.repository.database.execute(sql`
+      select curriculum_course_id
+      from student_course_progress
+      where student_id = ${row.student_id}
+        and status = 'approved'
+    `) as unknown as Array<{ curriculum_course_id: number }>;
+
+    const approvedSet = new Set(approvedCourses.map(c => Number(c.curriculum_course_id)));
+
+    // Calculate approved electives
+    const approvedElectives = allCurriculumCourses
+      .filter(c => c.category === "elective" && approvedSet.has(Number(c.id)))
+      .map(c => String(c.id));
+
+    // Calculate approved levels (cycles where all mandatory courses are approved)
+    const coursesByLevel = new Map<number, { totalMandatory: number; approvedMandatory: number }>();
+    for (const c of allCurriculumCourses) {
+      if (c.category === "elective") continue; // electives do not complete cycles
+      const lvl = Number(c.level);
+      const stats = coursesByLevel.get(lvl) ?? { totalMandatory: 0, approvedMandatory: 0 };
+      stats.totalMandatory++;
+      if (approvedSet.has(Number(c.id))) {
+        stats.approvedMandatory++;
+      }
+      coursesByLevel.set(lvl, stats);
+    }
+
+    const approvedLevels: number[] = [];
+    for (const [lvl, stats] of coursesByLevel.entries()) {
+      if (stats.totalMandatory > 0 && stats.totalMandatory === stats.approvedMandatory) {
+        approvedLevels.push(lvl);
+      }
+    }
+
+    // Check if they are a representative to determine effective role
+    const reps = await this.repository.database.execute(sql`
+      select position
+      from section_representative sr
+      join enrollment e on e.id = sr.enrollment_id
+      where e.student_id = ${row.student_id}
+        and sr.is_active = true
+      order by case sr.position when 'delegate' then 1 else 2 end
+      limit 1
+    `) as unknown as Array<{ position: string }>;
+
+    let role = "estudiante";
+    if (reps[0]) {
+      role = reps[0].position === "delegate" ? "delegado" : "subdelegado";
+    }
+
     return {
       id: Number(row.id),
       studentId: Number(row.student_id),
@@ -92,19 +171,19 @@ export class AuthService {
       lastName,
       institutionalEmail: row.institutional_email,
       email: row.institutional_email,
-      role: "estudiante",
+      role: role,
       careerId: Number(row.career_id),
       career_id: Number(row.career_id),
       curriculumId: Number(row.curriculum_id),
       currentLevel: row.current_level == null ? null : Number(row.current_level),
       currentCycle: "2026-1",
-      setupComplete: true,
-      especialidad_principal: null,
-      especialidades_interes: [],
-      especialidades: [],
+      setupComplete: row.current_level !== null,
+      especialidad_principal: especialidadPrincipal,
+      especialidades_interes: especialidadesInteres,
+      especialidades: especialidades,
       courseProgress: {
-        approvedLevels: [],
-        approvedElectives: [],
+        approvedLevels: approvedLevels,
+        approvedElectives: approvedElectives,
         currentCourses: currentCourses.map((course) => ({
           idSeccion: String(course.section_id),
           codigoSeccion: course.section_code,
