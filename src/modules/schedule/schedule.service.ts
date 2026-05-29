@@ -112,35 +112,20 @@ export class ScheduleService {
       }
     }
 
-    // Dynamic days computation based on active week
-    const today = new Date();
-    let activeWeek = weeks[0];
-    for (const week of weeks) {
-      const start = new Date(week.start_date);
-      const end = new Date(week.end_date);
-      end.setHours(23, 59, 59, 999);
-      if (today >= start && today <= end) {
-        activeWeek = week;
-        break;
-      }
-    }
-
-    if (!activeWeek && weeks.length > 0) {
-      activeWeek = weeks[0];
-    }
-
     const daysList: DayInfo[] = [];
-    if (activeWeek) {
-      const startDate = new Date(activeWeek.start_date);
-      const weekNum = activeWeek.week_number;
-      for (let i = 0; i < 7; i++) {
-        const currentDate = new Date(startDate);
-        currentDate.setDate(startDate.getDate() + i);
-        daysList.push({
-          dayName: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"][i],
-          dateText: formatDateText(currentDate),
-          weekText: `Semana ${weekNum} del ciclo`,
-        });
+    if (weeks && weeks.length > 0) {
+      for (const week of weeks) {
+        const startDate = new Date(week.start_date);
+        const weekNum = week.week_number;
+        for (let i = 0; i < 7; i++) {
+          const currentDate = new Date(startDate);
+          currentDate.setDate(startDate.getDate() + i);
+          daysList.push({
+            dayName: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"][i],
+            dateText: formatDateText(currentDate),
+            weekText: `Semana ${weekNum} del ciclo`,
+          });
+        }
       }
     } else {
       for (let i = 0; i < 7; i++) {
