@@ -8,6 +8,18 @@ export const createGradesRoutes = (_controller: GradesController) => {
 
   app.get("/me/courses", async (c) => {
     const code = c.req.query("code");
+    const codeFilter = code
+      ? sql`
+          and exists (
+            select 1
+            from app_user au
+            join student st on st.user_id = au.id
+            where au.code = ${code}
+              and st.curriculum_id = cc.curriculum_id
+          )
+        `
+      : sql``;
+
     const rows = await db.execute(sql`
       select
         c.id as course_id,
@@ -16,6 +28,7 @@ export const createGradesRoutes = (_controller: GradesController) => {
         ap.code as period_code,
         sec.id as section_id,
         sec.code as section_code,
+        sy.drive_file_url as syllabus_url,
         a.id as assessment_id,
         a.name as assessment_name,
         a.code as assessment_code,
@@ -30,16 +43,7 @@ export const createGradesRoutes = (_controller: GradesController) => {
       left join assessment a on a.syllabus_id = sy.id
       left join assessment_type at on at.id = a.assessment_type_id
       where ap.is_active = true
-        and (
-          ${code ?? null} is null
-          or exists (
-            select 1
-            from app_user au
-            join student st on st.user_id = au.id
-            where au.code = ${code ?? null}
-              and st.curriculum_id = cc.curriculum_id
-          )
-        )
+      ${codeFilter}
       order by c.name, sec.code, a.week_number, a.code
     `) as unknown as Array<{
       course_id: number;
@@ -51,6 +55,7 @@ export const createGradesRoutes = (_controller: GradesController) => {
       assessment_id: number | null;
       assessment_name: string | null;
       assessment_code: string | null;
+      syllabus_url: string | null;
       assessment_weight: string | null;
       assessment_type: string | null;
     }>;
@@ -65,6 +70,7 @@ export const createGradesRoutes = (_controller: GradesController) => {
           id: courseId,
           nombre: row.course_name,
           ciclo: row.period_code,
+          silaboUrl: row.syllabus_url ?? null,
           secciones: [],
         });
       }
