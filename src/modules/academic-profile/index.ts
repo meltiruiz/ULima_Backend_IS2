@@ -14,5 +14,12 @@ export const academicProfileRoutes = createAcademicProfileRoutes(academicProfile
 export { AcademicProfileController } from "./academic-profile.controller";
 export { AcademicProfileRepository } from "./academic-profile.repository";
 export { AcademicProfileService } from "./academic-profile.service";
-export { selectCareerSchema, selectSpecialtiesSchema } from "./academic-profile.schemas";
-export type { AcademicProfileStatus } from "./academic-profile.types";
+export { specialtiesQuerySchema, updateSpecialtiesSchema } from "./academic-profile.schemas";
+export type {
+  ActiveSpecialty,
+  CareerResponse,
+  ProfileResponse,
+  SpecialtyResponse,
+  UpdateSpecialtiesRequest,
+  UpdateSpecialtiesResult,
+} from "./academic-profile.types";

@@ -3,6 +3,7 @@ name: Academic Profile
 description: View student profile, list careers and specialties, and manage specialty selection for ULima++ students
 targets:
   - ../../../src/modules/academic-profile/**
+  - ../../../src/db/schema/schema.ts
 ---
 
 # Academic Profile
@@ -21,6 +22,7 @@ targets:
 - Incluye el objeto `career` con `id`, `code`, `name`, `faculty`.
 - Incluye el objeto `curriculum` con `id`, `name`.
 - Incluye el array `specialties` con las especialidades activas del estudiante.
+- Incluye `setupComplete` desde `student.specialty_setup_completed`.
 - **Auth**: Bearer token (vía `authMiddleware`).
 
 ### BR-AP-02: GET /academic-profile/careers — List careers
@@ -41,8 +43,13 @@ targets:
 - Especialidades que ya existían para el estudiante y están en la nueva lista → se reactivan (`isActive = true`).
 - Nuevas combinaciones → se insertan.
 - Si `primarySpecialtyId` es `null` y el estudiante tenía una primary activa, esa primary se desactiva.
+- Siempre marca `student.specialty_setup_completed = true`, incluso si `primarySpecialtyId` es `null` y `interestSpecialtyIds` está vacío.
 
-### BR-AP-05: Self-only constraint
+### BR-AP-05: Specialty setup completion
+- `student.specialty_setup_completed` indica que el estudiante ya pasó por el wizard de especialidades.
+- Este flag permite distinguir “todavía no configuró” de “configuró y eligió no seleccionar especialidad por ahora”.
+
+### BR-AP-06: Self-only constraint
 - El estudiante autenticado solo puede leer/modificar su propio perfil y sus propias especialidades.
 - No existe un endpoint para ver/modificar perfiles de otros estudiantes.
 
@@ -64,6 +71,7 @@ Retorna el perfil completo del estudiante autenticado.
       "institutionalEmail": "user@aloe.ulima.edu.pe",
       "role": "student",
       "currentLevel": 5,
+      "setupComplete": true,
       "career": {
         "id": 1,
         "code": "ING-INF",
@@ -161,6 +169,7 @@ Reemplaza las especialidades activas del estudiante autenticado.
   ```json
   {
     "message": "Specialties updated",
+    "setupComplete": true,
     "specialties": [
       { "specialtyId": 1, "selectionType": "primary" },
       { "specialtyId": 2, "selectionType": "interest" },
@@ -187,6 +196,7 @@ type ProfileResponse = {
   institutionalEmail: string;
   role: 'student' | 'delegate' | 'subdelegate';
   currentLevel: number | null;
+  setupComplete: boolean;
   career: {
     id: number;
     code: string;
@@ -240,6 +250,28 @@ type UpdateSpecialtiesRequest = {
 
 ```typescript
 type UpdateSpecialtiesResult = {
+  message: 'Specialties updated';
+  setupComplete: true;
+  specialties: Array<{
+    specialtyId: number;
+    selectionType: 'primary' | 'interest';
+  }>;
+};
+```
+
+### Student schema change
+
+```typescript
+student.specialtySetupCompleted: boolean;
+```
+
+- DB column: `student.specialty_setup_completed boolean not null default false`
+- Existing students default to `false` until `PUT /academic-profile/me/specialties` succeeds.
+
+### ActiveSpecialty
+
+```typescript
+type ActiveSpecialty = {
   specialtyId: number;
   selectionType: 'primary' | 'interest';
 };
@@ -265,6 +297,7 @@ Agregar métodos:
 - `findProfileByUserId(userId: number): Promise<ProfileResponse | null>`
   - JOIN `app_user` → `student` → `career` → `curriculum`
   - Retorna datos básicos del perfil (sin specialties).
+  - Incluye `setupComplete` desde `student.specialty_setup_completed`.
 
 - `findActiveSpecialties(studentId: number): Promise<Array<{ specialtyId: number; name: string; selectionType: 'primary' | 'interest' }>>`
   - JOIN `student_specialty` con `specialty` donde `student_specialty.studentId = studentId` y `student_specialty.isActive = true`.
@@ -286,6 +319,9 @@ Agregar métodos:
 
 - `upsertStudentSpecialty(studentId: number, specialtyId: number, selectionType: 'primary' | 'interest'): Promise<void>`
   - INSERT ON CONFLICT (studentId, specialtyId) DO UPDATE SET `selectionType = excluded.selectionType`, `isActive = true`.
+
+- `markSpecialtySetupCompleted(studentId: number): Promise<void>`
+  - UPDATE `student` SET `specialty_setup_completed = true` WHERE `id = studentId`.
 
 - `specialtyExists(specialtyId: number): Promise<boolean>`
   - Verifica que el `specialtyId` exista en la tabla `specialty`.
@@ -316,8 +352,9 @@ Agregar métodos:
   5. Llama a `repository.deactivateAllStudentSpecialties(studentId)`.
   6. Si `primarySpecialtyId` no es null, upsert con `selectionType = 'primary'`.
   7. Para cada `interestSpecialtyId`, upsert con `selectionType = 'interest'`.
-  8. Captura error del unique index y relanza como `HttpError(409, 'DUPLICATE_PRIMARY')`.
-  9. Retorna la lista actualizada.
+  8. Marca setup completado con `repository.markSpecialtySetupCompleted(studentId)`.
+  9. Captura error del unique index y relanza como `HttpError(409, 'DUPLICATE_PRIMARY')`.
+  10. Retorna `{ message: 'Specialties updated', setupComplete: true, specialties }`.
 
 ### academic-profile.controller.ts
 

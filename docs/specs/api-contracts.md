@@ -61,9 +61,15 @@ Contrato REST local del backend ULima++. Mantener alineado manualmente con `ULim
   "role": "student",
   "careerId": 1,
   "curriculumId": 1,
-  "currentLevel": 5
+  "currentLevel": 5,
+  "setupComplete": false,
+  "specialties": [
+    { "specialtyId": 1, "name": "Ingeniería de Software", "selectionType": "primary" }
+  ]
 }
 ```
+
+Errores de login: `401 USER_NOT_FOUND`, `401 INVALID_PASSWORD`, `403 NOT_ENROLLED`.
 
 ## Academic Profile
 
@@ -83,6 +89,7 @@ Perfil completo del estudiante autenticado.
       "institutionalEmail": "user@aloe.ulima.edu.pe",
       "role": "student",
       "currentLevel": 5,
+      "setupComplete": true,
       "career": {
         "id": 1,
         "code": "ING-INF",
@@ -147,6 +154,7 @@ Reemplaza las especialidades activas del estudiante autenticado. Escribe en `stu
   ```json
   {
     "message": "Specialties updated",
+    "setupComplete": true,
     "specialties": [
       { "specialtyId": 1, "selectionType": "primary" },
       { "specialtyId": 2, "selectionType": "interest" }
@@ -158,6 +166,7 @@ Reemplaza las especialidades activas del estudiante autenticado. Escribe en `stu
 Notas:
 
 - No existe endpoint para cambiar carrera/curriculum en v1.
+- `PUT /academic-profile/me/specialties` marca `student.specialty_setup_completed = true` incluso con listas vacías.
 
 ## Curriculum
 
