@@ -16,80 +16,95 @@ export const createCourseDetailRoutes = (_controller: CourseDetailController) =>
   const app = new Hono();
 
   app.get("/sections", async (c) => {
-    const rows = await db.execute(sql`
-      select
-        sec.id as section_id,
-        sec.code as section_code,
-        t.teacher_code,
-        c.id as course_id,
-        c.name as course_name,
-        coalesce(avg(sscore.value), 0) as promedio,
-        coalesce(max(e.attended_hours), 0) as attended_hours,
-        coalesce(max(e.absent_hours), 0) as absent_hours,
-        coalesce(max(e.total_hours), 0) as total_hours
-      from section sec
-      join teacher t on t.id = sec.teacher_id
-      join course_offering co on co.id = sec.course_offering_id
-      join course c on c.id = co.course_id
-      left join enrollment e on e.section_id = sec.id
-      left join student_score sscore on sscore.enrollment_id = e.id
-      group by sec.id, sec.code, t.teacher_code, c.id, c.name
-      order by c.name, sec.code
-    `) as unknown as Array<any>;
+    try {
+      const rows = await db.execute(sql`
+        select
+          sec.id as section_id,
+          sec.code as section_code,
+          t.teacher_code,
+          c.id as course_id,
+          c.name as course_name,
+          coalesce(avg(sscore.value), 0) as promedio,
+          coalesce(max(e.attended_hours), 0) as attended_hours,
+          coalesce(max(e.absent_hours), 0) as absent_hours,
+          coalesce(max(e.total_hours), 0) as total_hours
+        from section sec
+        join teacher t on t.id = sec.teacher_id
+        join course_offering co on co.id = sec.course_offering_id
+        join course c on c.id = co.course_id
+        left join enrollment e on e.section_id = sec.id
+        left join student_score sscore on sscore.enrollment_id = e.id
+        group by sec.id, sec.code, t.teacher_code, c.id, c.name
+        order by c.name, sec.code
+      `) as unknown as Array<any>;
 
-    return c.json({
-      secciones: rows.map((row) => ({
-        idSeccion: String(row.section_id),
-        codigoSeccion: row.section_code,
-        docenteCode: row.teacher_code ?? "",
-        promedioSeccion: Number(row.promedio ?? 0),
-        idCurso: String(row.course_id),
-        curso: row.course_name,
-        asistido: Number(row.attended_hours ?? 0),
-        inasistencia: Number(row.absent_hours ?? 0),
-        total: Number(row.total_hours ?? 0),
-      })),
-    });
+      return c.json({
+        secciones: rows.map((row) => ({
+          idSeccion: String(row.section_id),
+          codigoSeccion: row.section_code,
+          docenteCode: row.teacher_code ?? "",
+          promedioSeccion: Number(row.promedio ?? 0),
+          idCurso: String(row.course_id),
+          curso: row.course_name,
+          asistido: Number(row.attended_hours ?? 0),
+          inasistencia: Number(row.absent_hours ?? 0),
+          total: Number(row.total_hours ?? 0),
+        })),
+      });
+    } catch (e) {
+      console.error("DB Error in /sections", e);
+      return c.json({ secciones: [] });
+    }
   });
 
   app.get("/teachers", async (c) => {
-    const rows = await db.execute(sql`
-      select teacher_code, full_name
-      from teacher
-      order by full_name
-    `) as unknown as Array<{ teacher_code: string | null; full_name: string }>;
+    try {
+      const rows = await db.execute(sql`
+        select teacher_code, full_name
+        from teacher
+        order by full_name
+      `) as unknown as Array<{ teacher_code: string | null; full_name: string }>;
 
-    return c.json({
-      docentes: rows.map((row) => ({
-        code: row.teacher_code ?? "",
-        ...splitName(row.full_name),
-      })),
-    });
+      return c.json({
+        docentes: rows.map((row) => ({
+          code: row.teacher_code ?? "",
+          ...splitName(row.full_name),
+        })),
+      });
+    } catch (e) {
+      console.error("DB Error in /teachers", e);
+      return c.json({ docentes: [] });
+    }
   });
 
   app.get("/enrollments", async (c) => {
-    const rows = await db.execute(sql`
-      select
-        e.id,
-        au.code as student_code,
-        co.course_id,
-        e.section_id
-      from enrollment e
-      join student st on st.id = e.student_id
-      join app_user au on au.id = st.user_id
-      join section sec on sec.id = e.section_id
-      join course_offering co on co.id = sec.course_offering_id
-      order by e.section_id, au.code
-    `) as unknown as Array<any>;
+    try {
+      const rows = await db.execute(sql`
+        select
+          e.id,
+          au.code as student_code,
+          co.course_id,
+          e.section_id
+        from enrollment e
+        join student st on st.id = e.student_id
+        join app_user au on au.id = st.user_id
+        join section sec on sec.id = e.section_id
+        join course_offering co on co.id = sec.course_offering_id
+        order by e.section_id, au.code
+      `) as unknown as Array<any>;
 
-    return c.json({
-      enrollments: rows.map((row) => ({
-        id: String(row.id),
-        studentCode: row.student_code,
-        idCurso: String(row.course_id),
-        idSeccion: String(row.section_id),
-      })),
-    });
+      return c.json({
+        enrollments: rows.map((row) => ({
+          id: String(row.id),
+          studentCode: row.student_code,
+          idCurso: String(row.course_id),
+          idSeccion: String(row.section_id),
+        })),
+      });
+    } catch (e) {
+      console.error("DB Error in /enrollments", e);
+      return c.json({ enrollments: [] });
+    }
   });
 
   app.get("/sections/:sectionId", async (c) => {
@@ -101,131 +116,146 @@ export const createCourseDetailRoutes = (_controller: CourseDetailController) =>
 
   app.get("/sections/:sectionId/announcements", async (c) => {
     const sectionId = Number(c.req.param("sectionId"));
-    const rows = await db.execute(sql`
-      select
-        a.id,
-        a.title,
-        a.message,
-        a.published_at,
-        au.code as autor_code,
-        au.full_name,
-        au.institutional_email
-      from announcement a
-      join section_representative sr on sr.id = a.section_representative_id
-      join enrollment e on e.id = sr.enrollment_id
-      join student st on st.id = e.student_id
-      join app_user au on au.id = st.user_id
-      where sr.section_id = ${sectionId}
-        and a.is_active = true
-      order by a.published_at desc
-    `) as unknown as Array<any>;
+    try {
+      const rows = await db.execute(sql`
+        select
+          a.id,
+          a.title,
+          a.message,
+          a.published_at,
+          au.code as autor_code,
+          au.full_name,
+          au.institutional_email
+        from announcement a
+        join section_representative sr on sr.id = a.section_representative_id
+        join enrollment e on e.id = sr.enrollment_id
+        join student st on st.id = e.student_id
+        join app_user au on au.id = st.user_id
+        where sr.section_id = ${sectionId}
+          and a.is_active = true
+        order by a.published_at desc
+      `) as unknown as Array<any>;
 
-    return c.json({
-      anuncios: rows.map((row) => ({
-        id: String(row.id),
-        idSeccion: String(sectionId),
-        titulo: row.title,
-        mensaje: row.message,
-        fecha: row.published_at?.toISOString?.() ?? String(row.published_at ?? ""),
-        autorCode: row.autor_code,
-        autor: {
-          code: row.autor_code,
-          ...splitName(row.full_name),
-          email: row.institutional_email,
-          role: "estudiante",
-          career_id: null,
-          currentCycle: "2026-1",
-          setupComplete: true,
-        },
-      })),
-    });
+      return c.json({
+        anuncios: rows.map((row) => ({
+          id: String(row.id),
+          idSeccion: String(sectionId),
+          titulo: row.title,
+          mensaje: row.message,
+          fecha: row.published_at?.toISOString?.() ?? String(row.published_at ?? ""),
+          autorCode: row.autor_code,
+          autor: {
+            code: row.autor_code,
+            ...splitName(row.full_name),
+            email: row.institutional_email,
+            role: "estudiante",
+            career_id: null,
+            currentCycle: "2026-1",
+            setupComplete: true,
+          },
+        })),
+      });
+    } catch (e) {
+      console.error(`DB Error in /sections/${sectionId}/announcements`, e);
+      return c.json({ anuncios: [] });
+    }
   });
 
   app.get("/sections/:sectionId/advising", async (c) => {
     const sectionId = Number(c.req.param("sectionId"));
-    const rows = await db.execute(sql`
-      select
-        cas.id,
-        cas.course_offering_id,
-        cas.section_id,
-        cas.day_of_week,
-        cas.start_time,
-        cas.end_time,
-        cas.classroom,
-        cas.meeting_url,
-        t.teacher_code,
-        t.full_name
-      from course_advising_session cas
-      join teacher t on t.id = cas.teacher_id
-      join section sec on sec.course_offering_id = cas.course_offering_id
-      where sec.id = ${sectionId}
-        and (cas.section_id is null or cas.section_id = ${sectionId})
-      order by cas.day_of_week, cas.start_time
-    `) as unknown as Array<any>;
+    try {
+      const rows = await db.execute(sql`
+        select
+          cas.id,
+          cas.course_offering_id,
+          cas.section_id,
+          cas.day_of_week,
+          cas.start_time,
+          cas.end_time,
+          cas.classroom,
+          cas.meeting_url,
+          t.teacher_code,
+          t.full_name
+        from course_advising_session cas
+        join teacher t on t.id = cas.teacher_id
+        join section sec on sec.course_offering_id = cas.course_offering_id
+        where sec.id = ${sectionId}
+          and (cas.section_id is null or cas.section_id = ${sectionId})
+        order by cas.day_of_week, cas.start_time
+      `) as unknown as Array<any>;
 
-    return c.json({
-      asesorias: rows.map((row) => ({
-        id: String(row.id),
-        courseId: String(row.course_offering_id),
-        docenteCode: row.teacher_code ?? "",
-        docente: {
-          code: row.teacher_code ?? "",
-          ...splitName(row.full_name),
-        },
-        dia: dayName(Number(row.day_of_week)),
-        inicio: row.start_time ?? "",
-        fin: row.end_time ?? "",
-        aula: row.classroom ?? "Por definir",
-        zoom: row.meeting_url ?? "",
-      })),
-    });
+      return c.json({
+        asesorias: rows.map((row) => ({
+          id: String(row.id),
+          courseId: String(row.course_offering_id),
+          docenteCode: row.teacher_code ?? "",
+          docente: {
+            code: row.teacher_code ?? "",
+            ...splitName(row.full_name),
+          },
+          dia: dayName(Number(row.day_of_week)),
+          inicio: row.start_time ?? "",
+          fin: row.end_time ?? "",
+          aula: row.classroom ?? "Por definir",
+          zoom: row.meeting_url ?? "",
+        })),
+      });
+    } catch (e) {
+      console.error(`DB Error in /sections/${sectionId}/advising`, e);
+      return c.json({ asesorias: [] });
+    }
   });
 
   app.get("/sections/:sectionId/contacts", async (c) => {
     const sectionId = Number(c.req.param("sectionId"));
-    const teacherRows = await db.execute(sql`
-      select t.teacher_code, t.full_name
-      from section sec
-      join teacher t on t.id = sec.teacher_id
-      where sec.id = ${sectionId}
-      limit 1
-    `) as unknown as Array<any>;
-    const rows = await db.execute(sql`
-      select
-        e.id as enrollment_id,
-        au.code,
-        au.full_name,
-        au.institutional_email,
-        s.career_id,
-        sr.position
-      from enrollment e
-      join student s on s.id = e.student_id
-      join app_user au on au.id = s.user_id
-      left join section_representative sr on sr.enrollment_id = e.id and sr.is_active = true
-      where e.section_id = ${sectionId}
-      order by au.full_name
-    `) as unknown as Array<any>;
+    try {
+      const teacherRows = await db.execute(sql`
+        select t.teacher_code, t.full_name
+        from section sec
+        join teacher t on t.id = sec.teacher_id
+        where sec.id = ${sectionId}
+        limit 1
+      `) as unknown as Array<any>;
+      const rows = await db.execute(sql`
+        select
+          e.id as enrollment_id,
+          au.code,
+          au.full_name,
+          au.institutional_email,
+          s.career_id,
+          sr.position
+        from enrollment e
+        join student s on s.id = e.student_id
+        join app_user au on au.id = s.user_id
+        left join section_representative sr on sr.enrollment_id = e.id and sr.is_active = true
+        where e.section_id = ${sectionId}
+        order by au.full_name
+      `) as unknown as Array<any>;
 
-    return c.json({
-      docente: teacherRows[0]
-        ? {
-            code: teacherRows[0].teacher_code ?? "",
-            ...splitName(teacherRows[0].full_name),
-          }
-        : null,
-      alumnos: rows.map((row) => ({
-        user: {
-          code: row.code,
-          ...splitName(row.full_name),
-          email: row.institutional_email,
-          role: row.position === "delegate" ? "delegado" : row.position === "subdelegate" ? "subdelegado" : "estudiante",
-          career_id: row.career_id,
-          currentCycle: "2026-1",
-          setupComplete: true,
-        },
-        roleInSection: row.position === "delegate" ? "delegado" : row.position === "subdelegate" ? "subdelegado" : "estudiante",
-      })),
-    });
+      return c.json({
+        docente: teacherRows[0]
+          ? {
+              code: teacherRows[0].teacher_code ?? "",
+              ...splitName(teacherRows[0].full_name),
+            }
+          : null,
+        alumnos: rows.map((row) => ({
+          user: {
+            code: row.code,
+            ...splitName(row.full_name),
+            email: row.institutional_email,
+            role: row.position === "delegate" ? "delegado" : row.position === "subdelegate" ? "subdelegado" : "estudiante",
+            career_id: row.career_id,
+            currentCycle: "2026-1",
+            setupComplete: true,
+          },
+          roleInSection: row.position === "delegate" ? "delegado" : row.position === "subdelegate" ? "subdelegado" : "estudiante",
+        })),
+      });
+    } catch (e) {
+      console.error(`DB Error in /sections/${sectionId}/contacts`, e);
+      return c.json({ docente: null, alumnos: [] });
+    }
   });
 
   return app;

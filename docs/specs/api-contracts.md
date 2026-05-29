@@ -196,14 +196,93 @@ Notas:
 
 ## Schedule
 
-- `GET /schedule/me/sessions`
-- `GET /schedule/me/assessments`
-- `GET /schedule/me/load`
+### GET /schedule/me/sessions
+Retorna el horario semanal por bloques de tiempo para las secciones donde el estudiante se encuentra matriculado activamente.
+- **Auth**: Bearer token
+- **Response** `200 OK`:
+  ```json
+  {
+    "days": [
+      {
+        "dayName": "Lunes",
+        "dateText": "12 de Enero",
+        "weekText": "Semana 2 del ciclo"
+      }
+    ],
+    "secciones": [
+      {
+        "idSeccion": "1",
+        "codigoSeccion": "856",
+        "docenteCode": "T001",
+        "promedioSeccion": 0,
+        "idCurso": "10",
+        "curso": "INGENIERÍA DE SOFTWARE II",
+        "asistido": 12,
+        "inasistencia": 2,
+        "total": 30,
+        "horarios": [
+          {
+            "dia": "Lunes",
+            "inicio": "08:00:00",
+            "hora_inicio": "08:00 am",
+            "fin": "10:00:00",
+            "hora_fin": "10:00 am",
+            "aula": "L3-402",
+            "salon": "L3-402",
+            "color": "blue"
+          }
+        ]
+      }
+    ]
+  }
+  ```
+
+### GET /schedule/me/assessments
+Retorna la lista de evaluaciones programadas en el sílabo mapeadas a fechas y horarios reales basados en el cronograma semanal de clases del estudiante.
+- **Auth**: Bearer token
+- **Response** `200 OK`:
+  ```json
+  {
+    "assessments": [
+      {
+        "id": "1",
+        "courseName": "INGENIERÍA DE SOFTWARE II",
+        "sectionCode": "856",
+        "code": "EE1",
+        "name": "Examen Escrito 1",
+        "weekNumber": 2,
+        "date": "2026-01-12",
+        "startTime": "08:00:00",
+        "endTime": "10:00:00",
+        "classroom": "L3-402",
+        "color": "blue"
+      }
+    ]
+  }
+  ```
+
+### GET /schedule/me/load
+Retorna la carga académica por semana para el periodo académico activo, identificando semanas con alta carga académica.
+- **Auth**: Bearer token
+- **Response** `200 OK`:
+  ```json
+  {
+    "weeks": [
+      {
+        "weekNumber": 2,
+        "startDate": "2026-01-12",
+        "endDate": "2026-01-18",
+        "assessmentCount": 3,
+        "isHighLoad": true
+      }
+    ]
+  }
+  ```
 
 Notas:
 
 - Horario usa `schedule_session` de secciones con enrollment activo.
-- Evaluaciones usan `assessment.week_number`.
+- Evaluaciones usan `assessment.week_number` mapeado dinámicamente a fechas reales de la clase en esa semana académica.
 - Alta carga es 3+ evaluaciones en una misma semana académica.
 
 ## Course Detail
