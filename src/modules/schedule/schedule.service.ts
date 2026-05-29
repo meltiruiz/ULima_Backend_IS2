@@ -40,6 +40,28 @@ function formatTimeToAmPm(timeStr: string): string {
   return `${displayHourStr}:${displayMinuteStr} ${ampm}`;
 }
 
+function getAcademicWeeks(): RawWeekRow[] {
+  const weeks: RawWeekRow[] = [];
+  const startDate = new Date(2026, 3, 6); // April 6, 2026
+
+  for (let i = 1; i <= 16; i++) {
+    const weekStart = new Date(startDate);
+    weekStart.setDate(startDate.getDate() + (i - 1) * 7);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+
+    const startStr = `${weekStart.getFullYear()}-${(weekStart.getMonth() + 1).toString().padStart(2, '0')}-${weekStart.getDate().toString().padStart(2, '0')}`;
+    const endStr = `${weekEnd.getFullYear()}-${(weekEnd.getMonth() + 1).toString().padStart(2, '0')}-${weekEnd.getDate().toString().padStart(2, '0')}`;
+
+    weeks.push({
+      week_number: i,
+      start_date: startStr,
+      end_date: endStr,
+    });
+  }
+  return weeks;
+}
+
 export class ScheduleService {
   constructor(
     readonly repository: ScheduleRepository,
@@ -48,7 +70,7 @@ export class ScheduleService {
 
   async getSessions(studentId: number): Promise<SessionsResponse> {
     const rows = await this.repository.findActiveEnrollmentsWithSessions(studentId);
-    const weeks = await this.repository.findAcademicWeeksForActivePeriod();
+    const weeks = getAcademicWeeks();
 
     const activeDayName = (day: number) =>
       ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"][day - 1] ?? "Por definir";
@@ -138,83 +160,104 @@ export class ScheduleService {
 
   async getAssessments(studentId: number): Promise<AssessmentsResult> {
     const rawAssessments = await this.repository.findActiveSyllabiAndAssessments(studentId);
-    const weeks = await this.repository.findAcademicWeeksForActivePeriod();
-
-    const assessmentsMap = new Map<number, AssessmentResponse>();
+    const weeks = getAcademicWeeks();
 
     const weeksMap = new Map<number, RawWeekRow>();
     for (const w of weeks) {
       weeksMap.set(w.week_number, w);
     }
 
-    const sessionsByAssessment = new Map<number, RawAssessmentRow[]>();
+    const assessmentsList: AssessmentResponse[] = [];
+    const seen = new Set<string>();
+
+    const rowsByAssessment = new Map<number, RawAssessmentRow[]>();
     for (const row of rawAssessments) {
-      if (!sessionsByAssessment.has(row.assessment_id)) {
-        sessionsByAssessment.set(row.assessment_id, []);
+      if (!rowsByAssessment.has(row.assessment_id)) {
+        rowsByAssessment.set(row.assessment_id, []);
       }
-      sessionsByAssessment.get(row.assessment_id)!.push(row);
+      rowsByAssessment.get(row.assessment_id)!.push(row);
     }
 
-    for (const [assessmentId, rows] of sessionsByAssessment.entries()) {
+    for (const [, rows] of rowsByAssessment.entries()) {
       const validSessions = rows.filter((r) => r.day_of_week != null);
-      let selectedSession = validSessions[0] || rows[0];
+      if (validSessions.length === 0) {
+        const row = rows[0];
+        const startTime = row.start_time ?? "08:00:00";
+        const endTime = row.end_time ?? "10:00:00";
 
-      for (const sess of validSessions) {
-        if (
-          selectedSession.day_of_week == null ||
-          (sess.day_of_week != null && sess.day_of_week < selectedSession.day_of_week)
-        ) {
-          selectedSession = sess;
+        assessmentsList.push({
+          id: String(row.assessment_id),
+          courseName: row.course_name,
+          sectionCode: row.section_code,
+          code: row.assessment_code,
+          name: row.assessment_name,
+          weekNumber: row.assessment_week_number,
+          date: "",
+          startTime: startTime,
+          endTime: endTime,
+          classroom: row.classroom ?? "Por definir",
+          color: row.color_hex ?? "blue",
+        });
+      } else {
+        for (const row of validSessions) {
+          if (row.day_of_week == null) continue;
+
+          const week = weeksMap.get(row.assessment_week_number);
+          let calculatedDateStr = "";
+          if (week) {
+            const weekStart = new Date(week.start_date);
+            const dayOffset = row.day_of_week - 1;
+            const calculatedDate = new Date(weekStart);
+            calculatedDate.setDate(weekStart.getDate() + dayOffset);
+            calculatedDateStr = calculatedDate.toISOString().split("T")[0];
+          }
+
+          const key = `${row.assessment_id}-${calculatedDateStr}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+
+          const startTime = row.start_time ?? "08:00:00";
+          const endTime = row.end_time ?? "10:00:00";
+
+          assessmentsList.push({
+            id: String(row.assessment_id),
+            courseName: row.course_name,
+            sectionCode: row.section_code,
+            code: row.assessment_code,
+            name: row.assessment_name,
+            weekNumber: row.assessment_week_number,
+            date: calculatedDateStr,
+            startTime: startTime,
+            endTime: endTime,
+            classroom: row.classroom ?? "Por definir",
+            color: row.color_hex ?? "blue",
+          });
         }
       }
-
-      const week = weeksMap.get(selectedSession.assessment_week_number);
-      let calculatedDateStr = "";
-      if (week) {
-        const weekStart = new Date(week.start_date);
-        const dayOffset = (selectedSession.day_of_week ?? 1) - 1;
-        const calculatedDate = new Date(weekStart);
-        calculatedDate.setDate(weekStart.getDate() + dayOffset);
-        calculatedDateStr = calculatedDate.toISOString().split("T")[0];
-      }
-
-      const startTime = selectedSession.start_time ?? "08:00:00";
-      const endTime = selectedSession.end_time ?? "10:00:00";
-
-      assessmentsMap.set(assessmentId, {
-        id: String(selectedSession.assessment_id),
-        courseName: selectedSession.course_name,
-        sectionCode: selectedSession.section_code,
-        code: selectedSession.assessment_code,
-        name: selectedSession.assessment_name,
-        weekNumber: selectedSession.assessment_week_number,
-        date: calculatedDateStr,
-        startTime: startTime,
-        endTime: endTime,
-        classroom: selectedSession.classroom ?? "Por definir",
-        color: selectedSession.color_hex ?? "blue",
-      });
     }
 
     return {
-      assessments: Array.from(assessmentsMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
+      assessments: assessmentsList.sort((a, b) => a.date.localeCompare(b.date)),
     };
   }
 
   async getWeeklyLoad(studentId: number): Promise<WeeklyLoadResponse> {
     const assessmentsResult = await this.getAssessments(studentId);
-    const weeks = await this.repository.findAcademicWeeksForActivePeriod();
+    const weeks = getAcademicWeeks();
 
-    const countsByWeek = new Map<number, number>();
+    const uniqueAssessmentsInWeek = new Map<number, Set<string>>();
     for (const ass of assessmentsResult.assessments) {
       const weekNum = ass.weekNumber;
-      countsByWeek.set(weekNum, (countsByWeek.get(weekNum) ?? 0) + 1);
+      if (!uniqueAssessmentsInWeek.has(weekNum)) {
+        uniqueAssessmentsInWeek.set(weekNum, new Set<string>());
+      }
+      uniqueAssessmentsInWeek.get(weekNum)!.add(ass.id);
     }
 
     const weeksList: WeeklyLoadItem[] = [];
     for (const week of weeks) {
       const weekNum = week.week_number;
-      const count = countsByWeek.get(weekNum) ?? 0;
+      const count = uniqueAssessmentsInWeek.get(weekNum)?.size ?? 0;
       weeksList.push({
         weekNumber: weekNum,
         startDate: week.start_date,
