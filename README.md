@@ -136,7 +136,21 @@ NODE_ENV=development
 bun install
 bun run dev
 bun run build
+bun run start
 ```
+
+## Despliegue En Vercel
+
+- El backend expone `src/server.ts` como `default export` de Hono.
+- No usa `Bun.serve()`, `app.listen()` ni un servidor persistente manual.
+- Vercel puede desplegarlo como funciones serverless sin cambiar los paths publicos actuales.
+
+Configuracion recomendada:
+
+- Framework Preset: `Hono`
+- Install Command: `bun install`
+- Build Command: `bun run build`
+- Output Directory: dejar vacio
 
 Comandos restringidos:
 

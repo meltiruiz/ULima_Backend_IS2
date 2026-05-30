@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { config } from "./config/app-config";
 import { registerEventObservers } from "./events";
 import { registerModules } from "./modules";
 import { errorHandler } from "./shared/middleware/error-handler";
@@ -41,23 +40,4 @@ app.get("/health", (c) => {
 // --- Modules routes ---
 registerModules(app);
 
-// --- Server start ---
-const PORT = config.server.port;
-
-console.log(`ULima++ Backend iniciando en puerto ${PORT}...`);
-
-if (typeof Bun === "undefined") {
-  import("@hono/node-server").then(({ serve }) => {
-    serve({
-      fetch: app.fetch,
-      port: PORT,
-    }, (info) => {
-      console.log(`Servidor Node.js escuchando en http://localhost:${info.port}`);
-    });
-  });
-}
-
-export default {
-  port: PORT,
-  fetch: app.fetch,
-};
+export default app;
