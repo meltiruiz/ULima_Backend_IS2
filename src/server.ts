@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { registerEventObservers } from "./events";
-import { registerModules } from "./modules";
-import { errorHandler } from "./shared/middleware/error-handler";
+import { registerEventObservers } from "./events/index.js";
+import { registerModules } from "./modules/index.js";
+import { errorHandler } from "./shared/middleware/error-handler.js";
 
 const app = new Hono();
 

@@ -1,9 +1,9 @@
 import { Hono } from "hono";
-import type { AuthController } from "./auth.controller";
-import { validateJson } from "../../shared/middleware/validate-dto";
-import { loginSchema } from "./auth.schemas";
-import { authMiddleware } from "../../shared/middleware/auth-middleware";
-import type { AppRole } from "./auth.types";
+import type { AuthController } from "./auth.controller.js";
+import { validateJson } from "../../shared/middleware/validate-dto.js";
+import { loginSchema } from "./auth.schemas.js";
+import { authMiddleware } from "../../shared/middleware/auth-middleware.js";
+import type { AppRole } from "./auth.types.js";
 
 export const createAuthRoutes = (controller: AuthController) => {
   const app = new Hono<{ Variables: { userId: number; role: AppRole } }>();

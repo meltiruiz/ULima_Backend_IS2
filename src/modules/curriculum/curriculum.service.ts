@@ -1,6 +1,6 @@
-import type { EventBus } from "../../events";
-import type { CurriculumRepository } from "./curriculum.repository";
-import { HttpError } from "../../shared/errors/http-error";
+import type { EventBus } from "../../events/index.js";
+import type { CurriculumRepository } from "./curriculum.repository.js";
+import { HttpError } from "../../shared/errors/http-error.js";
 
 export class CurriculumService {
   constructor(

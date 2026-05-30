@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import type { CurriculumController } from "./curriculum.controller";
-import { authMiddleware } from "../../shared/middleware/auth-middleware";
+import type { CurriculumController } from "./curriculum.controller.js";
+import { authMiddleware } from "../../shared/middleware/auth-middleware.js";
 
 export const createCurriculumRoutes = (controller: CurriculumController) => {
   const app = new Hono();

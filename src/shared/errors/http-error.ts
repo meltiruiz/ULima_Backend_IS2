@@ -1,4 +1,4 @@
-import { AppError } from "./app-error";
+import { AppError } from "./app-error.js";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 export class HttpError extends AppError {

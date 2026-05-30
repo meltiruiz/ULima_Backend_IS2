@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { ScheduleService } from "./schedule.service";
+import type { ScheduleService } from "./schedule.service.js";
 
 export class ScheduleController {
   constructor(readonly service: ScheduleService) {}

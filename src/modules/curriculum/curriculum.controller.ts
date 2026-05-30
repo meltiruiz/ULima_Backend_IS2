@@ -1,7 +1,7 @@
 import type { Context } from "hono";
-import type { CurriculumService } from "./curriculum.service";
-import { validateJson } from "../../shared/middleware/validate-dto";
-import { updateSimulationSchema } from "./curriculum.schemas";
+import type { CurriculumService } from "./curriculum.service.js";
+import { validateJson } from "../../shared/middleware/validate-dto.js";
+import { updateSimulationSchema } from "./curriculum.schemas.js";
 
 export class CurriculumController {
   constructor(readonly service: CurriculumService) {}

@@ -1,11 +1,11 @@
-import type { EventBus } from "../../events";
-import type { AcademicProfileRepository } from "./academic-profile.repository";
-import { HttpError } from "../../shared/errors/http-error";
+import type { EventBus } from "../../events/index.js";
+import type { AcademicProfileRepository } from "./academic-profile.repository.js";
+import { HttpError } from "../../shared/errors/http-error.js";
 import type {
   AppRole,
   ProfileResponse,
   UpdateSpecialtiesRequest,
-} from "./academic-profile.types";
+} from "./academic-profile.types.js";
 
 export class AcademicProfileService {
   constructor(

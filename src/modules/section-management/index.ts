@@ -1,9 +1,9 @@
-import { db } from "../../db";
-import { eventBus } from "../../events";
-import { SectionManagementController } from "./section-management.controller";
-import { SectionManagementRepository } from "./section-management.repository";
-import { createSectionManagementRoutes } from "./section-management.routes";
-import { SectionManagementService } from "./section-management.service";
+import { db } from "../../db/index.js";
+import { eventBus } from "../../events/index.js";
+import { SectionManagementController } from "./section-management.controller.js";
+import { SectionManagementRepository } from "./section-management.repository.js";
+import { createSectionManagementRoutes } from "./section-management.routes.js";
+import { SectionManagementService } from "./section-management.service.js";
 
 const sectionManagementRepository = new SectionManagementRepository(db);
 const sectionManagementService = new SectionManagementService(sectionManagementRepository, eventBus);
@@ -11,8 +11,8 @@ const sectionManagementController = new SectionManagementController(sectionManag
 
 export const sectionManagementRoutes = createSectionManagementRoutes(sectionManagementController);
 
-export { SectionManagementController } from "./section-management.controller";
-export { SectionManagementRepository } from "./section-management.repository";
-export { SectionManagementService } from "./section-management.service";
-export { createAnnouncementSchema } from "./section-management.schemas";
-export type { RepresentativePosition } from "./section-management.types";
+export { SectionManagementController } from "./section-management.controller.js";
+export { SectionManagementRepository } from "./section-management.repository.js";
+export { SectionManagementService } from "./section-management.service.js";
+export { createAnnouncementSchema } from "./section-management.schemas.js";
+export type { RepresentativePosition } from "./section-management.types.js";

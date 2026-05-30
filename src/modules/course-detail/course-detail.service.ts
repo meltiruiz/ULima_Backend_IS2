@@ -1,5 +1,5 @@
-import type { EventBus } from "../../events";
-import type { CourseDetailRepository } from "./course-detail.repository";
+import type { EventBus } from "../../events/index.js";
+import type { CourseDetailRepository } from "./course-detail.repository.js";
 
 export class CourseDetailService {
   constructor(

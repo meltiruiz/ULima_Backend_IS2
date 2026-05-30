@@ -1,4 +1,4 @@
-import type { DomainEventMap, DomainEventName } from "./event-types";
+import type { DomainEventMap, DomainEventName } from "./event-types.js";
 
 type AnyDomainEventHandler = (payload: unknown) => void | Promise<void>;
 

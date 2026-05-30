@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import type { GradesController } from "./grades.controller";
+import type { GradesController } from "./grades.controller.js";
 import { sql } from "drizzle-orm";
-import { db } from "../../db";
+import { db } from "../../db/index.js";
 
 export const createGradesRoutes = (_controller: GradesController) => {
   const app = new Hono();

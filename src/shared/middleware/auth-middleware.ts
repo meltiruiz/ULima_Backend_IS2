@@ -1,9 +1,9 @@
 import type { MiddlewareHandler } from "hono";
 import jwt, { type JwtPayload } from "jsonwebtoken";
 import { sql } from "drizzle-orm";
-import { db } from "../../db";
-import { config } from "../../config/app-config";
-import { HttpError } from "../errors/http-error";
+import { db } from "../../db/index.js";
+import { config } from "../../config/app-config.js";
+import { HttpError } from "../errors/http-error.js";
 
 export type AuthVariables = {
   userId: number;

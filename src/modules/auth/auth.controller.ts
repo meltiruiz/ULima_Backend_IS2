@@ -1,5 +1,5 @@
-import type { AuthService } from "./auth.service";
-import type { AppRole } from "./auth.types";
+import type { AuthService } from "./auth.service.js";
+import type { AppRole } from "./auth.types.js";
 
 export class AuthController {
   constructor(readonly service: AuthService) {}
