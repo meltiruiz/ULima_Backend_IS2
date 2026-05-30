@@ -1,5 +1,5 @@
-import type { EventBus } from "../../events";
-import type { ScheduleRepository, RawWeekRow, RawAssessmentRow } from "./schedule.repository";
+import type { EventBus } from "../../events/index.js";
+import type { ScheduleRepository, RawWeekRow, RawAssessmentRow } from "./schedule.repository.js";
 import type {
   SessionsResponse,
   SectionResponse,
@@ -8,7 +8,7 @@ import type {
   AssessmentResponse,
   WeeklyLoadResponse,
   WeeklyLoadItem,
-} from "./schedule.types";
+} from "./schedule.types.js";
 
 const monthNames = [
   "Enero",

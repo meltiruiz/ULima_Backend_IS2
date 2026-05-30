@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import type { SectionManagementController } from "./section-management.controller";
+import type { SectionManagementController } from "./section-management.controller.js";
 import { sql } from "drizzle-orm";
-import { db } from "../../db";
+import { db } from "../../db/index.js";
 
 export const createSectionManagementRoutes = (_controller: SectionManagementController) => {
   const app = new Hono();

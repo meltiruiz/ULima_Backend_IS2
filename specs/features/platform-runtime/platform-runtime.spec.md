@@ -3,6 +3,11 @@ name: Platform Runtime Compatibility
 description: Adaptar el runtime HTTP de Hono para Bun local y Vercel serverless sin arranque manual
 targets:
   - ../../../src/server.ts
+  - ../../../src/config/**
+  - ../../../src/db/**
+  - ../../../src/events/**
+  - ../../../src/modules/**
+  - ../../../src/shared/**
   - ../../../package.json
   - ../../../tsconfig.json
   - ../../../vercel.json
@@ -68,6 +73,11 @@ No cambia reglas de negocio, modulos funcionales, base de datos, autenticacion n
 - Los scripts de seed pueden seguir existiendo para uso manual, pero no deben bloquear `bun run build`.
 - No se debe resolver este problema agregando JSON externos faltantes al repo ni ejecutando seeds.
 
+### BR-PLATFORM-07: Imports ESM compatibles con Node y serverless
+- Los imports relativos ejecutados en runtime bajo Node ESM deben usar rutas explicitas a archivo, incluyendo extension `.js` en el codigo fuente TypeScript cuando aplique.
+- No se deben usar imports de directorio como `./events`, `./modules`, `../../db` ni equivalentes dentro del arbol de runtime.
+- El output JavaScript usado por Vercel no debe depender de resolucion implicita de `index.js` ni de extensiones omitidas para modulos relativos.
+
 ## Implementation Plan
 
 ### src/server.ts
@@ -79,6 +89,13 @@ No cambia reglas de negocio, modulos funcionales, base de datos, autenticacion n
   - import dinamico de `@hono/node-server`.
   - export `{ port, fetch }`.
 - Exportar solo `default app`.
+- Cambiar imports relativos para que apunten a archivos explicitos compatibles con Node ESM.
+
+### src/config/**, src/db/**, src/events/**, src/modules/**, src/shared/**
+
+- Normalizar imports y re-exports relativos usados en runtime a rutas explicitas con extension `.js`.
+- Reemplazar imports de directorio por imports a `index.js` o al archivo concreto que corresponda.
+- Mantener intactas las reglas de negocio y contratos REST; el cambio es solo de compatibilidad de runtime/import resolution.
 
 ### package.json
 
@@ -110,6 +127,7 @@ No cambia reglas de negocio, modulos funcionales, base de datos, autenticacion n
 
 - `src/server.ts` exporta `default app`.
 - No existe `Bun.serve()`, `serve(...)`, `app.listen(...)` ni export `{ port, fetch }` en el runtime HTTP.
+- No existen imports de directorio ni imports relativos sin extension dentro del codigo TypeScript ejecutado por el runtime serverless.
 - `bun run build` no falla por archivos de seed fuera del runtime productivo.
 - `GET /health` sigue respondiendo correctamente.
 - Los modulos siguen registrados bajo sus rutas actuales.

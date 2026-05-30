@@ -1,6 +1,6 @@
-import type { db } from "../../db";
+import type { db } from "../../db/index.js";
 import { sql } from "drizzle-orm";
-import type { AppRole, AuthCurrentCourse, AuthSpecialty, AuthUser, AuthUserWithPassword } from "./auth.types";
+import type { AppRole, AuthCurrentCourse, AuthSpecialty, AuthUser, AuthUserWithPassword } from "./auth.types.js";
 
 type UserRow = {
   id: number;

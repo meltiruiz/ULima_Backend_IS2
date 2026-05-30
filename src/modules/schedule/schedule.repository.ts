@@ -1,4 +1,4 @@
-import type { db } from "../../db";
+import type { db } from "../../db/index.js";
 import { sql } from "drizzle-orm";
 
 export type RawSessionRow = {

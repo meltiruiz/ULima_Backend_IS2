@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import type { ZodSchema } from "zod";
-import { HttpError } from "../errors/http-error";
+import { HttpError } from "../errors/http-error.js";
 
 export const validateJson = async <T>(c: Context, schema: ZodSchema<T>) => {
   const body = await c.req.json().catch(() => {

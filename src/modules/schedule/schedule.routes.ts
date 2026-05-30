@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import type { ScheduleController } from "./schedule.controller";
-import { authMiddleware } from "../../shared/middleware/auth-middleware";
+import type { ScheduleController } from "./schedule.controller.js";
+import { authMiddleware } from "../../shared/middleware/auth-middleware.js";
 
 export const createScheduleRoutes = (controller: ScheduleController) => {
   const app = new Hono<{ Variables: { studentId: number } }>();

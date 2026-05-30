@@ -1,5 +1,5 @@
-import type { EventBus } from "../../events";
-import type { GradesRepository } from "./grades.repository";
+import type { EventBus } from "../../events/index.js";
+import type { GradesRepository } from "./grades.repository.js";
 
 export class GradesService {
   constructor(

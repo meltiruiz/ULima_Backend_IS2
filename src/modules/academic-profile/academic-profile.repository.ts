@@ -1,4 +1,4 @@
-import type { db } from "../../db";
+import type { db } from "../../db/index.js";
 import { sql } from "drizzle-orm";
 import type {
   ActiveSpecialty,
@@ -7,7 +7,7 @@ import type {
   SelectionType,
   SpecialtyResponse,
   UpdateSpecialtiesResult,
-} from "./academic-profile.types";
+} from "./academic-profile.types.js";
 
 type ProfileRow = {
   id: number;

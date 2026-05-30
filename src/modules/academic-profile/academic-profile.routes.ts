@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import type { AcademicProfileController } from "./academic-profile.controller";
-import { authMiddleware } from "../../shared/middleware/auth-middleware";
-import type { AppRole } from "./academic-profile.types";
+import type { AcademicProfileController } from "./academic-profile.controller.js";
+import { authMiddleware } from "../../shared/middleware/auth-middleware.js";
+import type { AppRole } from "./academic-profile.types.js";
 
 export const createAcademicProfileRoutes = (controller: AcademicProfileController) => {
   const app = new Hono<{ Variables: { userId: number; role: AppRole } }>();

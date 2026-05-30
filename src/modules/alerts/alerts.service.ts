@@ -1,5 +1,5 @@
-import type { EventBus } from "../../events";
-import type { AlertsRepository } from "./alerts.repository";
+import type { EventBus } from "../../events/index.js";
+import type { AlertsRepository } from "./alerts.repository.js";
 
 export class AlertsService {
   constructor(
