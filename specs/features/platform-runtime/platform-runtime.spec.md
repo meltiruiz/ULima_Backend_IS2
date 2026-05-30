@@ -4,6 +4,7 @@ description: Adaptar el runtime HTTP de Hono para Bun local y Vercel serverless 
 targets:
   - ../../../src/server.ts
   - ../../../package.json
+  - ../../../tsconfig.json
   - ../../../vercel.json
   - ../../../README.md
 ---
@@ -62,6 +63,11 @@ No cambia reglas de negocio, modulos funcionales, base de datos, autenticacion n
 - La primera implementacion no debe agregar un adapter adicional si el `default export` de Hono cubre Bun local y Vercel segun la documentacion oficial actual.
 - Si se documenta el despliegue en `README.md`, debe quedar claro que Vercel usa funciones serverless y no un servidor persistente.
 
+### BR-PLATFORM-06: Build de produccion sin seeds
+- El build de TypeScript usado para despliegue no debe compilar `src/db/seed/**`.
+- Los scripts de seed pueden seguir existiendo para uso manual, pero no deben bloquear `bun run build`.
+- No se debe resolver este problema agregando JSON externos faltantes al repo ni ejecutando seeds.
+
 ## Implementation Plan
 
 ### src/server.ts
@@ -87,6 +93,11 @@ No cambia reglas de negocio, modulos funcionales, base de datos, autenticacion n
 - Agregarlo solo si es necesario para explicitar configuracion de despliegue.
 - No introducir rewrites que cambien el path publico de los endpoints existentes.
 
+### tsconfig.json
+
+- Excluir `src/db/seed/**` del build de TypeScript usado para deploy.
+- Mantener la compilacion de `src/**` para el backend real.
+
 ### README.md
 
 - Actualizar la seccion de ejecucion/despliegue solo si cambia el flujo recomendado.
@@ -99,6 +110,7 @@ No cambia reglas de negocio, modulos funcionales, base de datos, autenticacion n
 
 - `src/server.ts` exporta `default app`.
 - No existe `Bun.serve()`, `serve(...)`, `app.listen(...)` ni export `{ port, fetch }` en el runtime HTTP.
+- `bun run build` no falla por archivos de seed fuera del runtime productivo.
 - `GET /health` sigue respondiendo correctamente.
 - Los modulos siguen registrados bajo sus rutas actuales.
 - `bun run build` compila sin introducir errores nuevos.
