@@ -4,6 +4,7 @@ This index connects real user stories, product requirements, backend modules, an
 
 | Priority | Feature | Spec | User Stories | Requirements | Backend target | Status |
 | --- | --- | --- | --- | --- | --- | --- |
+| 0 | Platform Runtime | `specs/features/platform-runtime/platform-runtime.spec.md` | N/A | Deploy runtime compatibility | `src/server.ts`, root config files | Proposed for Vercel serverless migration |
 | 1 | Auth | `specs/features/auth/auth.spec.md` | US01, US02 | R1, R2, RNF6, RNF7 | `src/modules/auth` | Rewrite first; architecture scaffold ready, endpoint implementation pending |
 | 2 | Academic Profile | `specs/features/academic-profile/academic-profile.spec.md` | US05 | R12, R13 | `src/modules/academic-profile` | Rewrite second; architecture scaffold ready, endpoint implementation pending |
 | 3 | Curriculum | `specs/features/curriculum/curriculum.spec.md` | US03, US04 | R4, R5, R10, R11 | `src/modules/curriculum` | Rewrite third; architecture scaffold ready, endpoint implementation pending |
