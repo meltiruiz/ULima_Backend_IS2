@@ -8,6 +8,7 @@ type UserRow = {
   full_name: string;
   institutional_email: string;
   password_hash?: string;
+  token_version: number;
   student_id: number;
   career_id: number;
   curriculum_id: number;
@@ -51,6 +52,17 @@ const mapRole = (position?: "delegate" | "subdelegate" | null): AppRole => {
 export class AuthRepository {
   constructor(readonly database: typeof db) {}
 
+  async incrementTokenVersion(userId: number): Promise<number> {
+    const rows = await this.database.execute(sql`
+      update app_user
+      set token_version = token_version + 1
+      where id = ${userId}
+      returning token_version
+    `) as unknown as Array<{ token_version: number }>;
+
+    return Number(rows[0]?.token_version ?? 1);
+  }
+
   async findByCodeWithPassword(code: string): Promise<AuthUserWithPassword | null> {
     const rows = await this.database.execute(sql`
       select
@@ -59,6 +71,7 @@ export class AuthRepository {
         au.full_name,
         au.institutional_email,
         au.password_hash,
+        au.token_version,
         s.id as student_id,
         s.career_id,
         s.curriculum_id,
@@ -87,6 +100,7 @@ export class AuthRepository {
         au.code,
         au.full_name,
         au.institutional_email,
+        au.token_version,
         s.id as student_id,
         s.career_id,
         s.curriculum_id,
@@ -151,6 +165,7 @@ export class AuthRepository {
       id: Number(row.id),
       studentId: Number(row.student_id),
       code: row.code,
+      tokenVersion: Number(row.token_version),
       fullName: row.full_name,
       ...names,
       institutionalEmail: row.institutional_email,

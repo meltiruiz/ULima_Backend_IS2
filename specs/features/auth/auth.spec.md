@@ -45,12 +45,13 @@ targets:
   "studentId": 10,
   "code": "20201234",
   "role": "student",
+  "tokenVersion": 1,
   "iat": 1680000000,
   "exp": 1680086400
 }
 ```
 
-- El token no se persiste ni se blackliste. Es stateless.
+- Para asegurar "Single Active Session", el sistema implementa **Token Versioning**. El JWT es semi-stateless y se valida contra la versión actual en base de datos.
 
 ### BR-AUTH-04: Protected routes
 - `GET /auth/me` y `POST /auth/logout` requieren `Authorization: Bearer <token>`.
@@ -63,8 +64,8 @@ targets:
 - Incluye el rol que viaja en el JWT (no se reconsulta `section_representative` en cada request).
 
 ### BR-AUTH-06: POST /auth/logout
-- No invalida el token (stateless).
-- Solo retorna confirmación. El frontend debe descartar el token localmente.
+- Incrementa en `1` el campo `tokenVersion` en la base de datos (`app_user`). Esto invalida automáticamente cualquier JWT existente asociado al usuario.
+- Retorna confirmación. El frontend debe descartar el token localmente.
 
 ### BR-AUTH-07: No registration
 - No existe endpoint de registro. Todos los usuarios están precargados en `app_user`.
@@ -159,6 +160,7 @@ Cierra la sesión del lado del frontend.
 | `studentId` | `number` | `student.id` |
 | `code` | `string` | `app_user.code` |
 | `role` | `string` | `student` / `delegate` / `subdelegate` |
+| `tokenVersion` | `number` | Versión actual de la sesión |
 | `iat` | `number` | Issued at (Unix epoch seconds) |
 | `exp` | `number` | Expiration (Unix epoch seconds) |
 
@@ -174,10 +176,11 @@ El middleware `authMiddleware` en `src/shared/middleware/auth-middleware.ts` deb
 2. Verificar formato `Bearer <token>`.
 3. Validar la firma del JWT con el secreto configurado.
 4. Verificar que el token no haya expirado.
-5. Extraer `sub` (userId) y `role` del payload.
-6. Inyectar `userId` y `role` en el contexto de Hono mediante `c.set('userId', payload.sub)` y `c.set('role', payload.role)`.
-7. Si falta el header → `401 MISSING_TOKEN`.
-8. Si el token es inválido → `401 INVALID_TOKEN`.
+5. Extraer `sub` (userId), `role` y `tokenVersion` del payload.
+6. Consultar en base de datos el `app_user` asociado al `userId` y comparar las versiones. Si `payload.tokenVersion` no coincide con el `tokenVersion` de la BD, rechazar.
+7. Inyectar `userId` y `role` en el contexto de Hono mediante `c.set('userId', payload.sub)` y `c.set('role', payload.role)`.
+8. Si falta el header → `401 MISSING_TOKEN`.
+9. Si el token es inválido, expiró, o fue revocado por versión → `401 INVALID_TOKEN`.
 
 ## Implementation Plan
 
@@ -185,9 +188,12 @@ El middleware `authMiddleware` en `src/shared/middleware/auth-middleware.ts` deb
 
 Agregar métodos:
 
+- `incrementTokenVersion(userId: number): Promise<number>`
+  - Ejecuta `UPDATE app_user SET tokenVersion = tokenVersion + 1 WHERE id = userId` y retorna el nuevo valor.
+
 - `findByCodeWithPassword(code: string): Promise<AuthUserWithPassword | null>`
   - JOIN `app_user` con `student` donde `app_user.code = code`.
-  - Retorna datos de usuario, `passwordHash`, `setupComplete` desde `student.specialty_setup_completed`, especialidades activas y cursos activos.
+  - Retorna datos de usuario, `tokenVersion`, `passwordHash`, `setupComplete` desde `student.specialty_setup_completed`, especialidades activas y cursos activos.
 
 - `hasActiveEnrollment(studentId: number): Promise<boolean>`
   - Verifica al menos una fila en `enrollment` con `student_id = studentId` y `status = 'active'`.
@@ -211,9 +217,13 @@ Reemplazar implementación actual:
   4. Si no coincide → `HttpError(401, ..., 'INVALID_PASSWORD')`.
   5. Verifica matrícula activa con `repository.hasActiveEnrollment(user.studentId)`.
   6. Si no tiene matrícula activa → `HttpError(403, ..., 'NOT_ENROLLED')`.
-  7. Consulta `repository.findActiveRepresentation(user.studentId)` para determinar rol.
-  8. Firma JWT con `sub: user.id`, `studentId: user.studentId`, `code: user.code`, `role`.
-  9. Retorna `{ token, tokenType: 'Bearer', expiresIn, user }`.
+  7. Llama a `repository.incrementTokenVersion(user.id)` para conseguir la nueva versión e invalidar sesiones previas.
+  8. Consulta `repository.findActiveRepresentation(user.studentId)` para determinar rol.
+  9. Firma JWT con `sub: user.id`, `studentId: user.studentId`, `code: user.code`, `role`, y la nueva `tokenVersion`.
+  10. Retorna `{ token, tokenType: 'Bearer', expiresIn, user }`.
+
+- `logout(userId: number)`:
+  1. Llama a `repository.incrementTokenVersion(userId)` para forzar la expiración en otros dispositivos.
 
 - `me(userId: number)`:
   1. Llama a `repository.findById(userId)`.

@@ -22,6 +22,7 @@ export type AuthUser = {
   id: number;
   studentId: number;
   code: string;
+  tokenVersion: number;
   fullName: string;
   firstName: string;
   lastName: string;

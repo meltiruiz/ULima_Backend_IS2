@@ -26,7 +26,9 @@ export class AuthService {
 
       const representation = await this.repository.findActiveRepresentation(user.studentId);
       const role = representation?.position ?? "student";
-      const safeUser = { ...user };
+      const newTokenVersion = await this.repository.incrementTokenVersion(user.id);
+
+      const safeUser = { ...user, tokenVersion: newTokenVersion };
       delete (safeUser as { passwordHash?: string }).passwordHash;
       const authenticatedUser = { ...safeUser, role };
 
@@ -36,6 +38,7 @@ export class AuthService {
           studentId: authenticatedUser.studentId,
           code: authenticatedUser.code,
           role,
+          tokenVersion: newTokenVersion,
         }),
         tokenType: "Bearer",
         expiresIn: config.auth.jwtExpiresIn,
@@ -55,6 +58,7 @@ export class AuthService {
         curriculumId: 1,
         currentLevel: 1,
         specialtySetupCompleted: true,
+        tokenVersion: 1,
         role: mockRole
       };
       
@@ -64,11 +68,20 @@ export class AuthService {
           studentId: mockUser.studentId,
           code: mockUser.code,
           role: mockRole,
+          tokenVersion: 1,
         }),
         tokenType: "Bearer",
         expiresIn: config.auth.jwtExpiresIn,
         user: mockUser,
       };
+    }
+  }
+
+  async logout(userId: number) {
+    try {
+      await this.repository.incrementTokenVersion(userId);
+    } catch (e) {
+      console.error('DB Error in auth.service logout', e);
     }
   }
 
@@ -91,19 +104,21 @@ export class AuthService {
           curriculumId: 1,
           currentLevel: 1,
           specialtySetupCompleted: true,
+          tokenVersion: 1,
           role: role
         }
       };
     }
   }
 
-  private signToken(input: { userId: number; studentId: number; code: string; role: AppRole }) {
+  private signToken(input: { userId: number; studentId: number; code: string; role: AppRole; tokenVersion: number }) {
     return jwt.sign(
       {
         sub: input.userId,
         studentId: input.studentId,
         code: input.code,
         role: input.role,
+        tokenVersion: input.tokenVersion,
       },
       config.auth.jwtSecret,
       {
