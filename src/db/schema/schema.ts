@@ -71,6 +71,7 @@ export const appUser = pgTable("app_user", {
   fullName: varchar("full_name", { length: 150 }).notNull(),
   institutionalEmail: varchar("institutional_email", { length: 150 }).notNull().unique(),
   passwordHash: varchar("password_hash", { length: 255 }).notNull(),
+  tokenVersion: integer("token_version").notNull().default(1),
 });
 
 export const student = pgTable("student", {

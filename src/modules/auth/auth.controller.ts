@@ -8,6 +8,10 @@ export class AuthController {
     return this.service.login(input);
   }
 
+  logout(userId: number) {
+    return this.service.logout(userId);
+  }
+
   me(userId: number, role: AppRole) {
     return this.service.me(userId, role);
   }

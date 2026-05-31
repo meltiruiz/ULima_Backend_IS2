@@ -17,7 +17,10 @@ export const createAuthRoutes = (controller: AuthController) => {
     return c.json(await controller.me(Number(c.get("userId")), c.get("role") as AppRole));
   });
 
-  app.post("/logout", authMiddleware, (c) => c.json({ message: "Session closed" }));
+  app.post("/logout", authMiddleware, async (c) => {
+    await controller.logout(Number(c.get("userId")));
+    return c.json({ message: "Session closed" });
+  });
 
   return app;
 };

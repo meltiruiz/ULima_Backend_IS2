@@ -87,8 +87,19 @@ export const authMiddleware: MiddlewareHandler = async (c, next) => {
       const userId = Number(payload.sub);
       const studentId = Number(payload.studentId);
       const role = payload.role;
-      if (!Number.isInteger(userId) || !Number.isInteger(studentId) || typeof role !== "string") {
+      const tokenVersion = Number(payload.tokenVersion);
+      if (!Number.isInteger(userId) || !Number.isInteger(studentId) || typeof role !== "string" || !Number.isInteger(tokenVersion)) {
         throw new HttpError(401, "Token de autenticación inválido.", "INVALID_TOKEN");
+      }
+
+      // Validar tokenVersion contra la BD
+      const result = await db.execute(sql`
+        select token_version from app_user where id = ${userId} limit 1
+      `) as unknown as Array<{ token_version: number }>;
+      
+      const dbTokenVersion = result[0]?.token_version;
+      if (dbTokenVersion == null || dbTokenVersion !== tokenVersion) {
+        throw new HttpError(401, "Token de autenticación revocado o inválido.", "INVALID_TOKEN");
       }
 
       c.set("userId", userId);
