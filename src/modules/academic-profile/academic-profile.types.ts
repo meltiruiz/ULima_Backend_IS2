@@ -47,7 +47,7 @@ export type SpecialtyResponse = {
   carrera_id: number;
   name: string;
   description: string | null;
-  is_active: true;
+  is_active: boolean;
   display_order: number;
 };
 
