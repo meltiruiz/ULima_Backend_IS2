@@ -108,6 +108,7 @@ export const specialty = pgTable("specialty", {
   careerId: integer("career_id").notNull().references(() => career.id),
   name: varchar("name", { length: 120 }).notNull(),
   description: text("description"),
+  isActive: boolean("is_active").notNull().default(true),
 }, (t) => ({
   uqSpecialtyCareerName: unique("uq_specialty_career_name").on(t.careerId, t.name),
 }));

@@ -37,6 +37,7 @@ type SpecialtyRow = {
   career_id: number;
   name: string;
   description: string | null;
+  is_active: boolean;
 };
 
 type ActiveSpecialtyRow = {
@@ -161,7 +162,7 @@ export class AcademicProfileRepository {
   async findSpecialtiesByCareerId(careerId: number): Promise<SpecialtyResponse[]> {
     try {
       const rows = await this.database.execute(sql`
-        select id, career_id, name, description
+        select id, career_id, name, description, is_active
         from specialty
         where career_id = ${careerId}
         order by name
@@ -173,7 +174,7 @@ export class AcademicProfileRepository {
         carrera_id: Number(row.career_id),
         name: row.name,
         description: row.description,
-        is_active: true,
+        is_active: Boolean(row.is_active),
         display_order: index + 1,
       }));
     } catch (e) {
