@@ -145,7 +145,8 @@ export const createCourseDetailRoutes = (_controller: CourseDetailController) =>
           a.published_at,
           au.code as autor_code,
           au.full_name,
-          au.institutional_email
+          au.institutional_email,
+          sr.position
         from announcement a
         join section_representative sr on sr.id = a.section_representative_id
         join enrollment e on e.id = sr.enrollment_id
@@ -168,7 +169,7 @@ export const createCourseDetailRoutes = (_controller: CourseDetailController) =>
             code: row.autor_code,
             ...splitName(row.full_name),
             email: row.institutional_email,
-            role: "estudiante",
+            role: row.position === 'delegate' ? 'DELEGADO' : row.position === 'subdelegate' ? 'SUBDELEGADO' : 'estudiante',
             career_id: null,
             currentCycle: "2026-1",
             setupComplete: true,
