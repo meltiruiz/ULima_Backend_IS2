@@ -5,10 +5,30 @@ import { db } from "../../db/index.js";
 
 const dayName = (day: number) => ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"][day - 1] ?? "Por definir";
 const splitName = (fullName: string) => {
+  if (fullName.includes(",")) {
+    const parts = fullName.split(",");
+    return {
+      lastName: parts[0].trim(),
+      firstName: parts.slice(1).join(",").trim(),
+    };
+  }
+  
   const parts = fullName.trim().split(/\s+/);
+  if (parts.length > 2) {
+    return {
+      lastName: parts.slice(0, 2).join(" "),
+      firstName: parts.slice(2).join(" "),
+    };
+  } else if (parts.length === 2) {
+    return {
+      lastName: parts[0],
+      firstName: parts[1],
+    };
+  }
+  
   return {
-    firstName: parts.length > 1 ? parts.slice(0, -1).join(" ") : fullName,
-    lastName: parts.length > 1 ? parts[parts.length - 1] : "",
+    firstName: fullName,
+    lastName: "",
   };
 };
 

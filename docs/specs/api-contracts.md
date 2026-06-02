@@ -229,7 +229,7 @@ Retorna el horario semanal por bloques de tiempo para las secciones donde el est
             "hora_fin": "10:00 am",
             "aula": "L3-402",
             "salon": "L3-402",
-            "color": "blue"
+            "color": "#F94B3F"
           }
         ]
       }
@@ -255,7 +255,7 @@ Retorna la lista de evaluaciones programadas en el sílabo mapeadas a fechas y h
         "startTime": "08:00:00",
         "endTime": "10:00:00",
         "classroom": "L3-402",
-        "color": "blue"
+        "color": "#F94B3F"
       }
     ]
   }
@@ -284,6 +284,8 @@ Notas:
 - Horario usa `schedule_session` de secciones con enrollment activo.
 - Evaluaciones usan `assessment.week_number` mapeado dinámicamente a fechas reales de la clase en esa semana académica.
 - Alta carga es 3+ evaluaciones en una misma semana académica.
+
+- `GET /schedule/me/sessions` expone `schedule_session.classroom` por sesiÃ³n como `aula`/`salon`; `color` puede venir como nombre legacy o como hexadecimal desde `schedule_session.color_hex`.
 
 ## Course Detail
 
