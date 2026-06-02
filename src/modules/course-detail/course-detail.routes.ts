@@ -45,7 +45,7 @@ export const createCourseDetailRoutes = (_controller: CourseDetailController) =>
           c.id as course_id,
           c.name as course_name,
           coalesce(avg(sscore.value), 0) as promedio,
-          coalesce(max(e.attended_hours), 0) as attended_hours,
+          coalesce(min(e.attended_hours), 0) as attended_hours,
           coalesce(max(e.absent_hours), 0) as absent_hours,
           coalesce(max(e.total_hours), 0) as total_hours
         from section sec
