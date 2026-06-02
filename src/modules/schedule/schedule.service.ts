@@ -26,7 +26,7 @@ const monthNames = [
 ];
 
 function formatDateText(date: Date): string {
-  return `${date.getDate()} de ${monthNames[date.getMonth()]}`;
+  return `${date.getUTCDate()} de ${monthNames[date.getUTCMonth()]}`;
 }
 
 function formatTimeToAmPm(timeStr: string): string {
@@ -42,16 +42,16 @@ function formatTimeToAmPm(timeStr: string): string {
 
 function getAcademicWeeks(): RawWeekRow[] {
   const weeks: RawWeekRow[] = [];
-  const startDate = new Date(2026, 3, 6); // April 6, 2026
+  const startDate = new Date(Date.UTC(2026, 3, 6)); // April 6, 2026 UTC
 
   for (let i = 1; i <= 16; i++) {
     const weekStart = new Date(startDate);
-    weekStart.setDate(startDate.getDate() + (i - 1) * 7);
+    weekStart.setUTCDate(startDate.getUTCDate() + (i - 1) * 7);
     const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 6);
+    weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
 
-    const startStr = `${weekStart.getFullYear()}-${(weekStart.getMonth() + 1).toString().padStart(2, '0')}-${weekStart.getDate().toString().padStart(2, '0')}`;
-    const endStr = `${weekEnd.getFullYear()}-${(weekEnd.getMonth() + 1).toString().padStart(2, '0')}-${weekEnd.getDate().toString().padStart(2, '0')}`;
+    const startStr = `${weekStart.getUTCFullYear()}-${(weekStart.getUTCMonth() + 1).toString().padStart(2, '0')}-${weekStart.getUTCDate().toString().padStart(2, '0')}`;
+    const endStr = `${weekEnd.getUTCFullYear()}-${(weekEnd.getUTCMonth() + 1).toString().padStart(2, '0')}-${weekEnd.getUTCDate().toString().padStart(2, '0')}`;
 
     weeks.push({
       week_number: i,
@@ -119,7 +119,7 @@ export class ScheduleService {
         const weekNum = week.week_number;
         for (let i = 0; i < 7; i++) {
           const currentDate = new Date(startDate);
-          currentDate.setDate(startDate.getDate() + i);
+          currentDate.setUTCDate(startDate.getUTCDate() + i);
           daysList.push({
             dayName: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"][i],
             dateText: formatDateText(currentDate),
@@ -193,7 +193,7 @@ export class ScheduleService {
             const weekStart = new Date(week.start_date);
             const dayOffset = row.day_of_week - 1;
             const calculatedDate = new Date(weekStart);
-            calculatedDate.setDate(weekStart.getDate() + dayOffset);
+            calculatedDate.setUTCDate(weekStart.getUTCDate() + dayOffset);
             calculatedDateStr = calculatedDate.toISOString().split("T")[0];
           }
 
