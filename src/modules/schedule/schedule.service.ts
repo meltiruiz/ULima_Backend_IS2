@@ -29,6 +29,15 @@ function formatDateText(date: Date): string {
   return `${date.getUTCDate()} de ${monthNames[date.getUTCMonth()]}`;
 }
 
+function parseDateOnly(dateStr: string): Date {
+  const [year, month, day] = dateStr.split("-").map((part) => parseInt(part, 10));
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function formatDateOnly(date: Date): string {
+  return `${date.getUTCFullYear()}-${(date.getUTCMonth() + 1).toString().padStart(2, "0")}-${date.getUTCDate().toString().padStart(2, "0")}`;
+}
+
 function formatTimeToAmPm(timeStr: string): string {
   const [hourStr, minuteStr] = timeStr.split(":");
   const hour = parseInt(hourStr, 10);
@@ -50,13 +59,10 @@ function getAcademicWeeks(): RawWeekRow[] {
     const weekEnd = new Date(weekStart);
     weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
 
-    const startStr = `${weekStart.getUTCFullYear()}-${(weekStart.getUTCMonth() + 1).toString().padStart(2, '0')}-${weekStart.getUTCDate().toString().padStart(2, '0')}`;
-    const endStr = `${weekEnd.getUTCFullYear()}-${(weekEnd.getUTCMonth() + 1).toString().padStart(2, '0')}-${weekEnd.getUTCDate().toString().padStart(2, '0')}`;
-
     weeks.push({
       week_number: i,
-      start_date: startStr,
-      end_date: endStr,
+      start_date: formatDateOnly(weekStart),
+      end_date: formatDateOnly(weekEnd),
     });
   }
   return weeks;
@@ -115,7 +121,7 @@ export class ScheduleService {
     const daysList: DayInfo[] = [];
     if (weeks && weeks.length > 0) {
       for (const week of weeks) {
-        const startDate = new Date(week.start_date);
+        const startDate = parseDateOnly(week.start_date);
         const weekNum = week.week_number;
         for (let i = 0; i < 7; i++) {
           const currentDate = new Date(startDate);
@@ -190,11 +196,11 @@ export class ScheduleService {
           const week = weeksMap.get(row.assessment_week_number);
           let calculatedDateStr = "";
           if (week) {
-            const weekStart = new Date(week.start_date);
+            const weekStart = parseDateOnly(week.start_date);
             const dayOffset = row.day_of_week - 1;
             const calculatedDate = new Date(weekStart);
             calculatedDate.setUTCDate(weekStart.getUTCDate() + dayOffset);
-            calculatedDateStr = calculatedDate.toISOString().split("T")[0];
+            calculatedDateStr = formatDateOnly(calculatedDate);
           }
 
           const key = `${row.assessment_id}-${calculatedDateStr}`;

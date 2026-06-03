@@ -33,6 +33,8 @@ targets:
 - **Alta Carga**: Si una semana académica tiene **3 o más evaluaciones**, se marca con `isHighLoad = true`.
 - **Auth**: Bearer token.
 
+- `GET /schedule/me/sessions` retorna `aula`/`salon` desde `schedule_session.classroom` por sesiÃ³n y `color` desde `schedule_session.color_hex`, permitiendo aulas distintas por dÃ­a y colores hex por curso.
+
 ## Endpoints
 
 ### GET /schedule/me/sessions
@@ -67,7 +69,7 @@ targets:
             "hora_fin": "10:00 am",
             "aula": "L3-402",
             "salon": "L3-402",
-            "color": "blue"
+            "color": "#F94B3F"
           }
         ]
       }
@@ -92,7 +94,7 @@ targets:
         "startTime": "08:00:00",
         "endTime": "10:00:00",
         "classroom": "L3-402",
-        "color": "blue"
+        "color": "#F94B3F"
       }
     ]
   }
