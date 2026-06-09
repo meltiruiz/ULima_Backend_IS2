@@ -8,6 +8,10 @@ export class AuthController {
     return this.service.login(input);
   }
 
+  loginWithGoogle(input: { idToken: string }) {
+    return this.service.loginWithGoogle(input);
+  }
+
   logout(userId: number) {
     return this.service.logout(userId);
   }
