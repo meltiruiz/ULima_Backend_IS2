@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { AuthController } from "./auth.controller.js";
 import { validateJson } from "../../shared/middleware/validate-dto.js";
-import { loginSchema } from "./auth.schemas.js";
+import { loginSchema, googleLoginSchema } from "./auth.schemas.js";
 import { authMiddleware } from "../../shared/middleware/auth-middleware.js";
 import type { AppRole } from "./auth.types.js";
 
@@ -11,6 +11,11 @@ export const createAuthRoutes = (controller: AuthController) => {
   app.post("/login", async (c) => {
     const body = await validateJson(c, loginSchema);
     return c.json(await controller.login(body));
+  });
+
+  app.post("/google", async (c) => {
+    const body = await validateJson(c, googleLoginSchema);
+    return c.json(await controller.loginWithGoogle(body));
   });
 
   app.get("/me", authMiddleware, async (c) => {
