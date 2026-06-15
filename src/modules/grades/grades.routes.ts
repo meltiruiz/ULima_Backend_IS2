@@ -2,9 +2,13 @@ import { Hono } from "hono";
 import type { GradesController } from "./grades.controller.js";
 import { sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
+import { authMiddleware } from "../../shared/middleware/auth-middleware.js";
 
 export const createGradesRoutes = (_controller: GradesController) => {
   const app = new Hono();
+
+  // Expone cursos y evaluaciones del alumno: requiere JWT válido.
+  app.use("*", authMiddleware);
 
   app.get("/me/courses", async (c) => {
     try {
