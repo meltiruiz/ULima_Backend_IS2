@@ -102,33 +102,7 @@ export class AuthService {
     } catch (e) {
       if (e instanceof HttpError) throw e;
       console.error('DB Error in auth.service loginWithGoogle', e);
-      const mockRole = "student" as AppRole;
-      const mockUser = {
-        id: 0,
-        studentId: 0,
-        code: "00000000",
-        fullName: "Usuario Mock",
-        institutionalEmail: "mock@aloe.ulima.edu.pe",
-        careerId: 1,
-        curriculumId: 1,
-        currentLevel: 1,
-        specialtySetupCompleted: true,
-        tokenVersion: 1,
-        role: mockRole
-      };
-      
-      return {
-        token: this.signToken({
-          userId: mockUser.id,
-          studentId: mockUser.studentId,
-          code: mockUser.code,
-          role: mockRole,
-          tokenVersion: 1,
-        }),
-        tokenType: "Bearer",
-        expiresIn: config.auth.jwtExpiresIn,
-        user: mockUser,
-      };
+      throw new HttpError(500, "Error interno del servidor.", "INTERNAL_ERROR");
     }
   }
 
@@ -148,21 +122,7 @@ export class AuthService {
     } catch (e) {
       if (e instanceof HttpError) throw e;
       console.error('DB Error in auth.service me', e);
-      return {
-        user: {
-          id: userId,
-          studentId: userId,
-          code: "00000000",
-          fullName: "Usuario",
-          institutionalEmail: "00000000@aloe.ulima.edu.pe",
-          careerId: 1,
-          curriculumId: 1,
-          currentLevel: 1,
-          specialtySetupCompleted: true,
-          tokenVersion: 1,
-          role: role
-        }
-      };
+      throw new HttpError(500, "Error interno del servidor.", "INTERNAL_ERROR");
     }
   }
 
