@@ -6,10 +6,30 @@ import { authMiddleware } from "../../shared/middleware/auth-middleware.js";
 
 const dayName = (day: number) => ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"][day - 1] ?? "Por definir";
 const splitName = (fullName: string) => {
+  if (fullName.includes(",")) {
+    const parts = fullName.split(",");
+    return {
+      lastName: parts[0].trim(),
+      firstName: parts.slice(1).join(",").trim(),
+    };
+  }
+  
   const parts = fullName.trim().split(/\s+/);
+  if (parts.length > 2) {
+    return {
+      lastName: parts.slice(0, 2).join(" "),
+      firstName: parts.slice(2).join(" "),
+    };
+  } else if (parts.length === 2) {
+    return {
+      lastName: parts[0],
+      firstName: parts[1],
+    };
+  }
+  
   return {
-    firstName: parts.length > 1 ? parts.slice(0, -1).join(" ") : fullName,
-    lastName: parts.length > 1 ? parts[parts.length - 1] : "",
+    firstName: fullName,
+    lastName: "",
   };
 };
 
@@ -30,7 +50,7 @@ export const createCourseDetailRoutes = (_controller: CourseDetailController) =>
           c.id as course_id,
           c.name as course_name,
           coalesce(avg(sscore.value), 0) as promedio,
-          coalesce(max(e.attended_hours), 0) as attended_hours,
+          coalesce(min(e.attended_hours), 0) as attended_hours,
           coalesce(max(e.absent_hours), 0) as absent_hours,
           coalesce(max(e.total_hours), 0) as total_hours
         from section sec
@@ -133,7 +153,8 @@ export const createCourseDetailRoutes = (_controller: CourseDetailController) =>
           a.published_at,
           au.code as autor_code,
           au.full_name,
-          au.institutional_email
+          au.institutional_email,
+          sr.position
         from announcement a
         join section_representative sr on sr.id = a.section_representative_id
         join enrollment e on e.id = sr.enrollment_id
@@ -156,7 +177,7 @@ export const createCourseDetailRoutes = (_controller: CourseDetailController) =>
             code: row.autor_code,
             ...splitName(row.full_name),
             email: row.institutional_email,
-            role: "estudiante",
+            role: row.position === 'delegate' ? 'DELEGADO' : row.position === 'subdelegate' ? 'SUBDELEGADO' : 'estudiante',
             career_id: null,
             currentCycle: "2026-1",
             setupComplete: true,
