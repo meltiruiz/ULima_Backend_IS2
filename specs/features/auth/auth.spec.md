@@ -70,6 +70,19 @@ targets:
 ### BR-AUTH-07: No registration
 - No existe endpoint de registro. Todos los usuarios están precargados en `app_user`.
 
+### BR-AUTH-08: Autenticación exclusivamente por JWT
+- El `authMiddleware` autentica **únicamente** mediante `Authorization: Bearer <JWT>`.
+- Queda **prohibido** autenticar a partir de:
+  - el query param `?code=`,
+  - el header `X-User-Code`,
+  - el prefijo `Bearer dev-<code>`.
+- Estas vías de "modo desarrollo" permitían suplantar a cualquier estudiante con solo su código (sin contraseña ni token) y fueron eliminadas.
+
+### BR-AUTH-09: Fallo seguro ante errores de base de datos
+- Si una operación de autenticación falla por un error de base de datos, el servicio responde `500 INTERNAL_ERROR`.
+- **Nunca** se devuelve un usuario "mock"/sintético (p. ej. `id = 0`, `code = "00000000"`) ni se firma un JWT en una ruta de error.
+- Aplica a `login`, `loginWithGoogle`, `me` y a la validación de `tokenVersion` del middleware.
+
 ## Endpoints
 
 ### POST /auth/login
@@ -170,7 +183,7 @@ Cierra la sesión del lado del frontend.
 
 ## Auth Middleware
 
-El middleware `authMiddleware` en `src/shared/middleware/auth-middleware.ts` debe:
+El middleware `authMiddleware` en `src/shared/middleware/auth-middleware.ts` debe (ver BR-AUTH-08: solo JWT, sin atajos `code`/`X-User-Code`/`dev-`):
 
 1. Extraer el header `Authorization`.
 2. Verificar formato `Bearer <token>`.

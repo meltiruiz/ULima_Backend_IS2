@@ -13,7 +13,7 @@ Contrato REST local del backend ULima++. Mantener alineado manualmente con `ULim
 
 ## Principios Globales
 
-- Todas las rutas, salvo `GET /`, `GET /health` y `POST /auth/login`, usan `Authorization: Bearer <token>`.
+- Todas las rutas, salvo `GET /`, `GET /health`, `POST /auth/login` y `POST /auth/google`, usan `Authorization: Bearer <token>`. Este requisito está **enforced** por `authMiddleware` en cada módulo (incluidos `course-detail`, `grades` y `section-management`).
 - Usuario autenticado siempre es estudiante.
 - Roles permitidos: `student`, `delegate`, `subdelegate`.
 - `teacher` nunca produce sesión.
