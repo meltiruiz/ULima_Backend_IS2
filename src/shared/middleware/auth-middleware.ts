@@ -15,100 +15,49 @@ const isPayload = (payload: string | JwtPayload): payload is JwtPayload =>
   typeof payload !== "string";
 
 export const authMiddleware: MiddlewareHandler = async (c, next) => {
+  // Autenticación exclusivamente por JWT Bearer. No se aceptan códigos por
+  // query (`?code=`), header `X-User-Code` ni el prefijo `Bearer dev-`:
+  // esas vías permitían suplantar a cualquier usuario sin credenciales.
   const auth = c.req.header("Authorization");
-  const bearerCode = auth?.startsWith("Bearer dev-") ? auth.slice("Bearer dev-".length) : null;
-  const code = c.req.query("code") ?? c.req.header("X-User-Code") ?? bearerCode;
+  if (!auth) {
+    throw new HttpError(401, "No se envió token de autenticación.", "MISSING_TOKEN");
+  }
 
-  if (code) {
-    const normalizedCode = code.trim();
+  const [type, token] = auth.split(" ");
+  if (type !== "Bearer" || !token) {
+    throw new HttpError(401, "Token de autenticación inválido.", "INVALID_TOKEN");
+  }
 
-    // Query database to find the user and student by code
-    try {
-      const result = await db.execute(sql`
-        select
-          au.id as user_id,
-          s.id as student_id
-        from app_user au
-        join student s on s.user_id = au.id
-        where au.code = ${normalizedCode}
-        limit 1
-      `) as unknown as Array<{ user_id: number; student_id: number }>;
-
-      const row = result[0];
-      if (!row) {
-        throw new HttpError(401, "Token o código inválido.", "INVALID_TOKEN");
-      }
-
-      const userId = Number(row.user_id);
-      const studentId = Number(row.student_id);
-
-      c.set("userId", userId);
-      c.set("studentId", studentId);
-
-      const reps = await db.execute(sql`
-        select position
-        from section_representative sr
-        join enrollment e on e.id = sr.enrollment_id
-        where e.student_id = ${studentId}
-          and sr.is_active = true
-        order by case sr.position when 'delegate' then 1 else 2 end
-        limit 1
-      `) as unknown as Array<{ position: string }>;
-
-      let role = "estudiante";
-      if (reps[0]) {
-        role = reps[0].position === "delegate" ? "delegado" : "subdelegado";
-      }
-
-      c.set("role", role);
-    } catch (e) {
-      if (e instanceof HttpError) throw e;
-      console.error('DB Error in authMiddleware', e);
-      c.set("userId", 0);
-      c.set("studentId", 0);
-      c.set("role", "estudiante");
-    }
-  } else {
-    if (!auth) {
-      throw new HttpError(401, "No se envió token de autenticación.", "MISSING_TOKEN");
-    }
-
-    const [type, token] = auth.split(" ");
-    if (type !== "Bearer" || !token) {
+  try {
+    const payload = jwt.verify(token, config.auth.jwtSecret);
+    if (!isPayload(payload)) {
       throw new HttpError(401, "Token de autenticación inválido.", "INVALID_TOKEN");
     }
 
-    try {
-      const payload = jwt.verify(token, config.auth.jwtSecret);
-      if (!isPayload(payload)) {
-        throw new HttpError(401, "Token de autenticación inválido.", "INVALID_TOKEN");
-      }
-
-      const userId = Number(payload.sub);
-      const studentId = Number(payload.studentId);
-      const role = payload.role;
-      const tokenVersion = Number(payload.tokenVersion);
-      if (!Number.isInteger(userId) || !Number.isInteger(studentId) || typeof role !== "string" || !Number.isInteger(tokenVersion)) {
-        throw new HttpError(401, "Token de autenticación inválido.", "INVALID_TOKEN");
-      }
-
-      // Validar tokenVersion contra la BD
-      const result = await db.execute(sql`
-        select token_version from app_user where id = ${userId} limit 1
-      `) as unknown as Array<{ token_version: number }>;
-      
-      const dbTokenVersion = result[0]?.token_version;
-      if (dbTokenVersion == null || dbTokenVersion !== tokenVersion) {
-        throw new HttpError(401, "Token de autenticación revocado o inválido.", "INVALID_TOKEN");
-      }
-
-      c.set("userId", userId);
-      c.set("studentId", studentId);
-      c.set("role", role);
-    } catch (error) {
-      if (error instanceof HttpError) throw error;
-      throw new HttpError(401, "Token de autenticación inválido o expirado.", "INVALID_TOKEN");
+    const userId = Number(payload.sub);
+    const studentId = Number(payload.studentId);
+    const role = payload.role;
+    const tokenVersion = Number(payload.tokenVersion);
+    if (!Number.isInteger(userId) || !Number.isInteger(studentId) || typeof role !== "string" || !Number.isInteger(tokenVersion)) {
+      throw new HttpError(401, "Token de autenticación inválido.", "INVALID_TOKEN");
     }
+
+    // Validar tokenVersion contra la BD (Single Active Session).
+    const result = await db.execute(sql`
+      select token_version from app_user where id = ${userId} limit 1
+    `) as unknown as Array<{ token_version: number }>;
+
+    const dbTokenVersion = result[0]?.token_version;
+    if (dbTokenVersion == null || dbTokenVersion !== tokenVersion) {
+      throw new HttpError(401, "Token de autenticación revocado o inválido.", "INVALID_TOKEN");
+    }
+
+    c.set("userId", userId);
+    c.set("studentId", studentId);
+    c.set("role", role);
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(401, "Token de autenticación inválido o expirado.", "INVALID_TOKEN");
   }
 
   await next();
