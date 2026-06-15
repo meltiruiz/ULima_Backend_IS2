@@ -9,6 +9,9 @@ const envSchema = z.object({
     .refine((v) => Number.isInteger(v) && v > 0, "JWT_EXPIRES_IN debe ser un entero positivo"),
   PORT: z.string().optional().transform((v) => parseInt(v ?? "3000", 10)),
   NODE_ENV: z.enum(["development", "production", "test"]).optional().default("development"),
+  // Lista de orígenes permitidos para CORS, separados por coma.
+  // Si no se define, se mantiene comportamiento permisivo (*) — restringir en producción.
+  CORS_ORIGINS: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
