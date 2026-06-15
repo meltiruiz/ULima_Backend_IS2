@@ -93,6 +93,32 @@ export class AuthRepository {
     };
   }
 
+  async findByEmail(institutionalEmail: string): Promise<AuthUser | null> {
+    const rows = await this.database.execute(sql`
+      select
+        au.id,
+        au.code,
+        au.full_name,
+        au.institutional_email,
+        au.token_version,
+        s.id as student_id,
+        s.career_id,
+        s.curriculum_id,
+        s.current_level,
+        s.specialty_setup_completed
+      from app_user au
+      join student s on s.user_id = au.id
+      where au.institutional_email = ${institutionalEmail.trim()}
+      limit 1
+    `) as unknown as UserRow[];
+
+    const row = rows[0];
+    if (!row) return null;
+
+    const user = await this.buildUser(row, "student");
+    return user;
+  }
+
   async findById(userId: number, role: AppRole): Promise<AuthUser | null> {
     const rows = await this.database.execute(sql`
       select

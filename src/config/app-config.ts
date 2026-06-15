@@ -13,6 +13,7 @@ export const config = {
     env: env.NODE_ENV,
     isProduction: env.NODE_ENV === "production",
     isDevelopment: env.NODE_ENV === "development",
+    corsOrigins: env.CORS_ORIGINS?.split(",").map((o) => o.trim()).filter(Boolean) ?? [],
   },
 } as const;
 

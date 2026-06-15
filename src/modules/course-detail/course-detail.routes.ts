@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { CourseDetailController } from "./course-detail.controller.js";
 import { sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
+import { authMiddleware } from "../../shared/middleware/auth-middleware.js";
 
 const dayName = (day: number) => ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"][day - 1] ?? "Por definir";
 const splitName = (fullName: string) => {
@@ -34,6 +35,10 @@ const splitName = (fullName: string) => {
 
 export const createCourseDetailRoutes = (_controller: CourseDetailController) => {
   const app = new Hono();
+
+  // Todas las rutas de detalle de curso exponen datos académicos sensibles
+  // (secciones, docentes, matrículas, contactos): requieren JWT válido.
+  app.use("*", authMiddleware);
 
   app.get("/sections", async (c) => {
     try {
@@ -129,7 +134,10 @@ export const createCourseDetailRoutes = (_controller: CourseDetailController) =>
 
   app.get("/sections/:sectionId", async (c) => {
     const sectionId = c.req.param("sectionId");
-    const response = await app.request("/sections");
+    // Reenvía el Authorization para que la sub-petición interna pase authMiddleware.
+    const response = await app.request("/sections", {
+      headers: { Authorization: c.req.header("Authorization") ?? "" },
+    });
     const data = await response.json() as { secciones: any[] };
     return c.json({ section: data.secciones.find((section) => section.idSeccion === sectionId) ?? null });
   });

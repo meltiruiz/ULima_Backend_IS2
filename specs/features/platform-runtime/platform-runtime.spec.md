@@ -11,6 +11,8 @@ targets:
   - ../../../package.json
   - ../../../tsconfig.json
   - ../../../vercel.json
+  - ../../../.gitignore
+  - ../../../.env.example
   - ../../../README.md
 ---
 
@@ -77,6 +79,16 @@ No cambia reglas de negocio, modulos funcionales, base de datos, autenticacion n
 - Los imports relativos ejecutados en runtime bajo Node ESM deben usar rutas explicitas a archivo, incluyendo extension `.js` en el codigo fuente TypeScript cuando aplique.
 - No se deben usar imports de directorio como `./events`, `./modules`, `../../db` ni equivalentes dentro del arbol de runtime.
 - El output JavaScript usado por Vercel no debe depender de resolucion implicita de `index.js` ni de extensiones omitidas para modulos relativos.
+
+### BR-PLATFORM-08: CORS configurable por entorno
+- El middleware `cors` se configura con una lista de orígenes permitidos leída de la variable de entorno `CORS_ORIGINS` (orígenes separados por coma), expuesta vía `config.server.corsOrigins`.
+- Si `CORS_ORIGINS` está vacía o no definida, se mantiene el comportamiento permisivo (`*`) para no romper desarrollo.
+- En producción se debe definir `CORS_ORIGINS` con los orígenes reales del frontend.
+- `allowMethods` se limita a `GET, POST, PUT, DELETE, OPTIONS` y `allowHeaders` a `Content-Type, Authorization`.
+
+### BR-PLATFORM-09: Gestor de paquetes canónico único
+- El gestor canónico es **Bun** (`vercel.json` usa `bun install` / `bun run build`); el lockfile versionado es `bun.lock`.
+- `package-lock.json` no se versiona (está en `.gitignore`) para evitar lockfiles en conflicto y builds no reproducibles.
 
 ## Implementation Plan
 

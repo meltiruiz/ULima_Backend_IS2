@@ -1,10 +1,12 @@
 import type { EventBus } from "../../events/index.js";
 import type { AuthRepository } from "./auth.repository.js";
 import { HttpError } from "../../shared/errors/http-error.js";
-import bcrypt from "bcryptjs";
+import { OAuth2Client } from "google-auth-library";
 import jwt from "jsonwebtoken";
 import { config } from "../../config/app-config.js";
 import type { AppRole } from "./auth.types.js";
+
+const googleClient = new OAuth2Client();
 
 export class AuthService {
   constructor(
@@ -16,6 +18,10 @@ export class AuthService {
     try {
       const user = await this.repository.findByCodeWithPassword(input.code);
       if (!user) throw new HttpError(401, "Código no encontrado en la base de datos.", "USER_NOT_FOUND");
+      
+      // Import bcrypt dynamically to avoid global dependency issues if needed, or use the top level import.
+      // We will need to make sure bcrypt is imported at the top of the file.
+      const bcrypt = await import("bcryptjs");
       const passwordMatches = await bcrypt.compare(input.password, user.passwordHash);
       if (!passwordMatches) throw new HttpError(401, "Contraseña incorrecta.", "INVALID_PASSWORD");
 
@@ -47,33 +53,56 @@ export class AuthService {
     } catch (e) {
       if (e instanceof HttpError) throw e;
       console.error('DB Error in auth.service login', e);
-      const mockRole = "student" as AppRole;
-      const mockUser = {
-        id: 0,
-        studentId: 0,
-        code: input.code,
-        fullName: "Usuario",
-        institutionalEmail: `${input.code}@aloe.ulima.edu.pe`,
-        careerId: 1,
-        curriculumId: 1,
-        currentLevel: 1,
-        specialtySetupCompleted: true,
-        tokenVersion: 1,
-        role: mockRole
-      };
+      throw new HttpError(500, "Error interno del servidor.", "INTERNAL_ERROR");
+    }
+  }
+
+  async loginWithGoogle(input: { idToken: string }) {
+    try {
+      const ticket = await googleClient.verifyIdToken({
+        idToken: input.idToken,
+      });
+      const payload = ticket.getPayload();
       
+      if (!payload || !payload.email) {
+        throw new HttpError(401, "Token de Google inválido.", "INVALID_TOKEN");
+      }
+      
+      const email = payload.email;
+      if (!email.endsWith("@aloe.ulima.edu.pe")) {
+        throw new HttpError(403, "Debe usar un correo institucional (@aloe.ulima.edu.pe).", "INVALID_DOMAIN");
+      }
+
+      const user = await this.repository.findByEmail(email);
+      if (!user) throw new HttpError(401, "Usuario no registrado en la base de datos.", "USER_NOT_FOUND");
+
+      const hasActiveEnrollment = await this.repository.hasActiveEnrollment(user.studentId);
+      if (!hasActiveEnrollment) {
+        throw new HttpError(403, "El estudiante no tiene una matrícula activa.", "NOT_ENROLLED");
+      }
+
+      const representation = await this.repository.findActiveRepresentation(user.studentId);
+      const role = representation?.position ?? "student";
+      const newTokenVersion = await this.repository.incrementTokenVersion(user.id);
+
+      const authenticatedUser = { ...user, tokenVersion: newTokenVersion, role };
+
       return {
         token: this.signToken({
-          userId: mockUser.id,
-          studentId: mockUser.studentId,
-          code: mockUser.code,
-          role: mockRole,
-          tokenVersion: 1,
+          userId: authenticatedUser.id,
+          studentId: authenticatedUser.studentId,
+          code: authenticatedUser.code,
+          role,
+          tokenVersion: newTokenVersion,
         }),
         tokenType: "Bearer",
         expiresIn: config.auth.jwtExpiresIn,
-        user: mockUser,
+        user: authenticatedUser,
       };
+    } catch (e) {
+      if (e instanceof HttpError) throw e;
+      console.error('DB Error in auth.service loginWithGoogle', e);
+      throw new HttpError(500, "Error interno del servidor.", "INTERNAL_ERROR");
     }
   }
 
@@ -93,21 +122,7 @@ export class AuthService {
     } catch (e) {
       if (e instanceof HttpError) throw e;
       console.error('DB Error in auth.service me', e);
-      return {
-        user: {
-          id: userId,
-          studentId: userId,
-          code: "00000000",
-          fullName: "Usuario",
-          institutionalEmail: "00000000@aloe.ulima.edu.pe",
-          careerId: 1,
-          curriculumId: 1,
-          currentLevel: 1,
-          specialtySetupCompleted: true,
-          tokenVersion: 1,
-          role: role
-        }
-      };
+      throw new HttpError(500, "Error interno del servidor.", "INTERNAL_ERROR");
     }
   }
 
