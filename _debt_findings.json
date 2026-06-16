@@ -1,0 +1,2284 @@
+{
+  "summary": {
+    "totalConfirmed": 128,
+    "bySeverity": {
+      "critical": 11,
+      "high": 20,
+      "medium": 75,
+      "low": 22
+    },
+    "byRepo": {
+      "backend": 61,
+      "frontend": 67
+    }
+  },
+  "findings": [
+    {
+      "repo": "backend",
+      "dimension": "BE-architecture",
+      "title": "Layering violation: Routes importing and executing queries directly against DB",
+      "category": "architecture",
+      "severity": "critical",
+      "locations": [
+        "src/modules/grades/grades.routes.ts:4",
+        "src/modules/section-management/section-management.routes.ts:4",
+        "src/modules/course-detail/course-detail.routes.ts:4"
+      ],
+      "evidence": "Routes files import `db` directly and execute raw SQL queries with `db.execute(sql\\`...\\`)` instead of delegating to repository/service layers. For example, grades.routes.ts has raw SQL at line 24-62, section-management.routes.ts at line 11-25, and course-detail.routes.ts at line 20-58 and elsewhere.",
+      "impact": "Violates the promised architecture (routes → controller → service → repository). Business logic and data access leak into route handlers; these routes bypass dependency injection and error-handling patterns established in other modules. This makes testing, maintenance, and refactoring difficult.",
+      "remediation": "Create repository classes (GradesRepository, SectionManagementRepository, CourseDetailRepository) following the pattern of auth.repository.ts, bind them to services in module index.ts, and move all SQL queries out of routes into repositories. Route handlers should only coordinate HTTP concerns.",
+      "effort": "large",
+      "verifyNotes": "Confirmed. All three route files (grades, section-management, course-detail) import db directly and execute raw SQL queries via db.execute(sql`...`). The controllers are injected but completely unused (underscore-prefixed parameter names). Services and repositories have empty implementations. The promised architecture (routes → controller → service → repository) is completely bypassed. This violates established patterns, breaks testability, embeds business logic in HTTP handlers, and makes the dependency injection setup pointless. Severity is correctly stated as critical.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-architecture",
+      "title": "Fallback mock user data in auth service instead of propagating errors",
+      "category": "error-handling",
+      "severity": "critical",
+      "locations": [
+        "src/modules/auth/auth.service.ts:102-132",
+        "src/modules/auth/auth.service.ts:148-166"
+      ],
+      "evidence": "loginWithGoogle() catches all non-HttpError exceptions and returns a fake user object with id=0, code='00000000', etc. The me() method does the same: returns a synthetic user instead of throwing 500 on DB error. These violate the contract that callers can trust the JWT and user data.",
+      "impact": "Returns authentication tokens for ghost users when DB is down. Allows frontend to think authentication succeeded when the service cannot verify it. Potential security issue: tokens claim to be for id=0 with fake credentials.",
+      "remediation": "Throw HttpError(500) when DB access fails in auth service. Remove fallback mock users. Let the error handler return standard 500 response. Never allow auth to succeed without validating against the database.",
+      "effort": "small",
+      "verifyNotes": "Confirmed: Both loginWithGoogle() (lines 102-132) and me() (lines 148-166) catch all non-HttpError exceptions and return synthetic user objects with signed JWT tokens instead of propagating 500 errors. This allows authentication to appear successful during database outages, issuing tokens for ghost users (id=0, code='00000000'). The methods only log errors to console without notifying the client of the failure. This violates the authentication contract and should be escalated to CRITICAL because it affects API availability and could be exploited if downstream services trust JWT claims without database verification. The original 'high' severity understates the security and availability impact.\"",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-security",
+      "title": "Development-mode authentication bypass with Bearer dev- prefix",
+      "category": "security",
+      "severity": "critical",
+      "locations": [
+        "src/shared/middleware/auth-middleware.ts:19"
+      ],
+      "evidence": "const bearerCode = auth?.startsWith(\"Bearer dev-\") ? auth.slice(\"Bearer dev-\".length) : null; allows extracting a user code from Bearer token by stripping 'Bearer dev-' prefix, then using it to authenticate without password verification",
+      "impact": "Any developer or attacker with knowledge of a student code can impersonate that student by sending 'Bearer dev-<CODE>' header, completely bypassing password-based authentication and JWT validation",
+      "remediation": "Remove the dev- prefix bypass entirely. For development, use a separate test endpoint or environment variable to enable test mode that is explicitly disabled in production (NODE_ENV !== 'development')",
+      "effort": "small",
+      "verifyNotes": "CONFIRMED - The vulnerability is genuine and critical. The auth middleware at src/shared/middleware/auth-middleware.ts line 19 contains a development-mode authentication bypass that is ACTIVE IN ALL ENVIRONMENTS (development, test, and production). \n\nCode path: Line 19 extracts any string after 'Bearer dev-' prefix from Authorization header. Line 20 uses this extracted string as a user 'code'. Lines 22-70 then authenticate the request by looking up the user in the database using only the code, completely bypassing JWT validation, password verification, and token version checks.\n\nVerification details:\n1. The feature exists in the only auth middleware file in the codebase (src/shared/middleware/auth-middleware.ts)\n2. The specification (specs/features/auth/auth.spec.md line 241) explicitly states 'quitar lógica de headers dev-mode' (remove dev-mode header logic)\n3. There is NO environment check - the bypass works in all NODE_ENV values\n4. The authMiddleware protects all sensitive endpoints: academic profiles, curriculum, schedule, grades, alerts, personal data\n5. Attack requires only knowing a student's code (visible in institutional email domain), not password or JWT\n6. The bypass grants full access to impersonate any student across all protected endpoints\n\nImpact severity: CRITICAL - allows complete authentication bypass and impersonation of any student in the system without credentials. This is a specification violation (not implemented as approved) and a critical security flaw.\n\nThe corrected severity is CRITICAL (not overstated) - complete authentication bypass on all protected endpoints is textbook critical severity.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-security",
+      "title": "Unprotected routes exposing sensitive academic data without authorization",
+      "category": "authorization",
+      "severity": "critical",
+      "locations": [
+        "src/modules/course-detail/course-detail.routes.ts:18-163",
+        "src/modules/section-management/section-management.routes.ts:9-39",
+        "src/modules/grades/grades.routes.ts:9-120"
+      ],
+      "evidence": "Routes like GET /course-detail/sections, /course-detail/teachers, /course-detail/enrollments, /section-management/representatives, and /grades/me/courses do not use authMiddleware and expose enrollment data, teacher info, section details, and academic grades with optional 'code' query parameter for filtering. Any unauthenticated user can query by guessing or knowing a student code.",
+      "impact": "Unauthenticated attackers can enumerate all students, teachers, sections, enrollments, and academic performance data by iterating through known codes or publicly available information",
+      "remediation": "Add authMiddleware to all protected routes. Implement per-user authorization checks to ensure users can only access their own data or data they are permitted to view (e.g., delegates only for their sections)",
+      "effort": "medium",
+      "verifyNotes": "CONFIRMED: This is a genuine and serious authorization vulnerability. The claim is understated, not overstated. Analysis of actual code shows: (1) `/course-detail/sections` (line 18-58) has NO authMiddleware and exposes aggregate enrollment data including section IDs, teacher codes, course names, AND aggregated grades (promedio, attended_hours, absent_hours) - which are academic performance metrics across all enrollments in a section. (2) `/course-detail/enrollments` (line 80-108) has NO authMiddleware and directly returns studentCode, courseId, and sectionId for ALL enrollments - this allows enumeration of all student-section mappings. (3) `/section-management/representatives` (line 9-39) has NO authMiddleware and exposes section_id and enrollment_id for ALL active section representatives. (4) `/grades/me/courses` (line 9-117) has NO authMiddleware but accepts optional `code` query parameter to filter by student code - allowing unauthenticated users to query academic data for any known student code. The auth middleware exists (verified in schedule.routes.ts and academic-profile.routes.ts) but is not applied to these routes. The severity should be CRITICAL because: (1) Student codes are likely derivable/guessable; (2) Attackers can enumerate ALL students, sections, and teacher assignments; (3) Academic grades are exposed via the promedio field; (4) No authentication or authorization checks whatsoever on these sensitive endpoints. This is a complete authentication bypass for academic data.\"",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-security",
+      "title": "Database errors return mock/default values instead of failing securely",
+      "category": "error-handling",
+      "severity": "critical",
+      "locations": [
+        "src/modules/auth/auth.service.ts:102-132",
+        "src/modules/auth/auth.service.ts:148-166",
+        "src/shared/middleware/auth-middleware.ts:64-70"
+      ],
+      "evidence": "loginWithGoogle() catches all non-HttpError exceptions and returns a hardcoded mock user with id=0, code='00000000', email='mock@aloe.ulima.edu.pe' with a valid JWT token. me() returns default mock user data on DB error. authMiddleware sets userId=0, studentId=0 on DB errors instead of throwing.",
+      "impact": "Database connection failures during authentication cause fallback to a default/mock user instead of properly rejecting the request. Attackers could trigger DB issues and authenticate as user 0 (mock account), potentially bypassing security checks that depend on valid user IDs",
+      "remediation": "Catch database errors specifically and throw HttpError(500) instead of returning default/mock values. Never return a valid JWT or authenticated session for error cases.",
+      "effort": "small",
+      "verifyNotes": "Verified in code. The claim is accurate and the severity is actually CRITICAL, not just high. Three confirmed locations: (1) loginWithGoogle() at lines 102-132 returns a signed JWT token with mock user id=0, code='00000000', email='mock@aloe.ulima.edu.pe' on any non-HttpError exception during DB operations like findByEmail(), hasActiveEnrollment(), or findActiveRepresentation(). (2) me() at lines 148-165 returns default user data instead of throwing on DB errors. (3) authMiddleware at lines 64-70 silently falls back to userId=0, studentId=0 on DB query failures instead of throwing. The primary key is auto-generated (generatedByDefaultAsIdentity) so ID=0 is never legitimate in the database. An attacker can trigger DB failures (e.g., connection saturation) to force authentication as user 0 with a valid, signed JWT token. This bypasses authentication requirements entirely. The fallback behavior should reject requests with HttpError(500) or similar, not return authenticated sessions.\"",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-deps-build",
+      "title": "Dual conflicting lockfiles (bun.lock + package-lock.json)",
+      "category": "dependencies",
+      "severity": "critical",
+      "locations": [
+        "bun.lock (42 KB, committed)",
+        "package-lock.json (98 KB, committed)"
+      ],
+      "evidence": "Both lockfiles committed to git per 'git ls-files': bun.lock (generated by bun install) and package-lock.json (generated by npm install). Vercel config specifies 'installCommand': 'bun install' but npm lockfile is also present and larger. No .npmrc or bunfig.toml to establish canonical manager. package-lock.json has 2893 lines; bun.lock has 42 KB.",
+      "impact": "Unclear which package manager is canonical; risk of dependency version mismatch across environments (bun vs npm/pnpm); CI will use first matching lockfile; team coordination confusion; cache invalidation issues.",
+      "remediation": "Decide package manager: if bun is primary (vercel.json says so), delete package-lock.json from git ('git rm package-lock.json') and add 'package-lock.json' to .gitignore. If npm is canonical, remove bun.lock and use npm only. Document decision in README.",
+      "effort": "small",
+      "verifyNotes": "CONFIRMED as critical (upgraded from high). Both bun.lock and package-lock.json are committed to git. bun.lock is stale and MISSING two production dependencies (google-auth-library, pg) that are in package.json and correctly recorded in package-lock.json. Vercel config specifies 'bun install' but npm lockfile is 98KB vs bun's 42KB. No configuration files (.npmrc, bunfig.toml) to establish canonical manager. Files diverged: bun.lock added May 17, package-lock.json updated most recently June 9. Both continue to be modified across separate commits. This creates genuine risk of version mismatch, failed dependency resolution (bun install would not install pg/google-auth-library), and CI failures. Severity is CRITICAL because production dependencies are missing from the Bun lockfile, making installations incomplete if bun.lock is ever used.\"",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-testing",
+      "title": "Zero automated test infrastructure",
+      "category": "testing",
+      "severity": "critical",
+      "locations": [
+        "package.json"
+      ],
+      "evidence": "No test script in package.json (scripts: dev, build, start, db:* only). No test files found in src/ (0 .test.ts or .spec.ts files). No test runner config (jest/vitest/mocha) exists. package.json has no devDependencies for test runners, assertion libraries, or mocking tools.",
+      "impact": "Entire backend has zero test coverage. No automated regression detection. Critical business logic (auth, grades, enrollment validation) completely untested. Cannot validate changes before deployment. High risk of data corruption and logic errors.",
+      "remediation": "Add test infrastructure: install test runner (vitest/jest), add test script to package.json, create src/**/*.test.ts files for all modules starting with auth/grades services.",
+      "effort": "large",
+      "verifyNotes": "Claim is fully verified and accurate. No test infrastructure exists whatsoever: zero test files in src/, no test scripts in package.json, no test runner config files (jest/vitest/mocha), and no test dependencies in devDependencies. The codebase has 8 feature modules with substantial business logic (auth, grades, enrollment, alerts) that are completely untested. Severity remains critical given the educational institution context and critical nature of grade/enrollment operations. This is a genuine and severe technical debt item.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-testing",
+      "title": "Swallowed database errors with fallback mock data",
+      "category": "error-handling",
+      "severity": "critical",
+      "locations": [
+        "src/modules/auth/auth.service.ts:102-132",
+        "src/modules/auth/auth.service.ts:148-167",
+        "src/modules/academic-profile/academic-profile.repository.ts:99-112"
+      ],
+      "evidence": "auth.service.ts loginWithGoogle() catches database errors and returns fake mock user (id=0, studentId=0, code='00000000'). Catch block logs error but returns success response with mock data. me() method returns mock user on database failure instead of throwing. Similar pattern in academic-profile repository findProfileByUserId() returns hardcoded fallback with fake IDs.",
+      "impact": "App returns success with invalid data instead of error. Frontend receives userId=0, causing token issues and undefined behavior. Masks database connectivity problems. Compromises security (invalid token version). Silent data corruption.",
+      "remediation": "Remove mock fallbacks. Throw HttpError in catch blocks or re-throw. Let errors propagate to error handler middleware. Add explicit database health checks at startup.",
+      "effort": "small",
+      "verifyNotes": "CONFIRMED. The exact locations cited contain the described antipattern. All three files (auth.service.ts lines 102-132, 148-167; academic-profile.repository.ts lines 99-112) catch database/runtime errors and return hardcoded mock objects with fake IDs (userId=0, studentId=0, code=\"00000000\") instead of propagating errors. loginWithGoogle() signs valid JWTs for mock users with id=0, creating authentication bypass. me() returns invalid profile data on DB failure. academic-profile.repository.ts returns fabricated career/curriculum records. This silently masks database connectivity issues, returns invalid authentication tokens, and causes data corruption. Severity should be elevated from 'high' to 'critical' due to security implications (token with userId=0 bypasses user verification) and system reliability impact (cascading failures in dependent services).\"",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-deps-build",
+      "title": "Android release build signed with debug keys",
+      "category": "build",
+      "severity": "critical",
+      "locations": [
+        "android/app/build.gradle.kts:33-38"
+      ],
+      "evidence": "buildTypes { release { signingConfig = signingConfigs.getByName(\"debug\") } } - Comment says 'Add your own signing config for the release build' but uses debug signing instead.",
+      "impact": "Release APKs are signed with debug keys instead of production release keys, making them unsuitable for production deployment. This violates Android security best practices and would fail Play Store submission.",
+      "remediation": "Create a release signing configuration with a proper keystore file and update buildTypes.release to use it: signingConfig = signingConfigs.getByName(\"release\")",
+      "effort": "small",
+      "verifyNotes": "Confirmed in android/app/build.gradle.kts:33-38. Release build type explicitly configured to use debug signing keys with comment acknowledging it as temporary workaround. This prevents Play Store submission and violates Android security practices. Severity is correctly rated as critical - this is a genuine production deployment blocker.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-testing",
+      "title": "No test infrastructure: zero test coverage",
+      "category": "testing",
+      "severity": "critical",
+      "locations": [
+        "pubspec.yaml",
+        "lib/**"
+      ],
+      "evidence": "No test/ directory exists. No *_test.dart files found anywhere in the codebase. flutter_test is declared as a dev_dependency but no tests are actually written.",
+      "impact": "Zero automated test coverage means no regression detection, no CI/CD gate, and untested business logic flows (authentication, course progress calculations, data loading). Critical bugs can easily reach production undetected.",
+      "remediation": "Create test/ directory with unit tests for services (auth_service, malla_service, courses_service), widget tests for key pages (malla_page, calculadora_page), and integration tests for authentication flows. Aim for >70% coverage on services.",
+      "effort": "large",
+      "verifyNotes": "VERIFIED: Zero test coverage is genuine and critical. The codebase has 54 Dart files in lib/ covering essential business logic (authentication, course progress calculations, data loading, user enrollment) with absolutely no test infrastructure. flutter_test is declared as a dev_dependency but unused. No test/ directory exists, zero *_test.dart files found anywhere, no CI/CD testing gates. This is a legitimate critical debt item that exposes the application to production bugs in core features like login flows, grade calculations, and data synchronization.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-testing",
+      "title": "Uninitialized late fields accessed before initialization",
+      "category": "error-handling",
+      "severity": "critical",
+      "locations": [
+        "lib/services/courses_service.dart:15,40",
+        "lib/services/evaluations_service.dart:17,68",
+        "lib/pages/calculadora/calculadora_controller.dart:9,15,16"
+      ],
+      "evidence": "CoursesService declares `late List<Map<String, dynamic>> _coursesData` but getter `allCourses` (line 40) returns it without checking `_isLoaded`. If `loadCoursesData()` hasn't been called or throws, accessing `.allCourses` crashes with 'LateInitializationError'. Similarly in EvaluationSyllabusService (line 68: `allSyllabuses`), and in CalculadoraController late fields initialized in onInit() but used without null checks.",
+      "impact": "Race conditions or early access paths can trigger unhandled LateInitializationError, crashing the app. No safe-fail mechanism.",
+      "remediation": "Add checks before accessing: `if (!_isLoaded) throw Exception('Data not loaded')` or return empty list. Alternatively, initialize late fields with empty default instead of late.",
+      "effort": "medium",
+      "verifyNotes": "All three locations confirmed as genuine issues. CoursesService (line 40) and EvaluationSyllabusService (line 68) both have unprotected getters returning late fields without checking _isLoaded. CalculadoraController has an additional race condition: lines 26-27 call async initialization methods (both are async void, not awaited), so late fields cursos and syllabusData can be accessed before initialization completes. Line 50 further compounds the risk by calling _coursesService.allCourses, which itself can throw LateInitializationError. This is a critical crash risk, not just high—unhandled LateInitializationError is fatal in Flutter. Severity corrected from high to critical due to race condition and fire-and-forget async initialization pattern.\"",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-architecture",
+      "title": "Inconsistent error handling: Repositories silently swallow DB errors with fallback returns",
+      "category": "error-handling",
+      "severity": "high",
+      "locations": [
+        "src/modules/curriculum/curriculum.repository.ts:19-22,52-54,64-67,78-80,92-94,106-107,117-118",
+        "src/modules/academic-profile/academic-profile.repository.ts:100-112",
+        "src/modules/schedule/schedule.repository.ts:77-79"
+      ],
+      "evidence": "catch blocks in repository methods log errors but return empty arrays, empty objects, or hardcoded fallback values (e.g., return 1, return [], return {...defaultUser}). This masks DB failures and returns garbage data instead of surfacing the error. Controllers/services have no way to distinguish a legitimate empty result from a DB failure.",
+      "impact": "Silent failures degrade data integrity. Callers get fake data without knowing. Makes debugging production issues very difficult. Inconsistent with error-handler.ts which correctly propagates HttpError via onError.",
+      "remediation": "Let DB errors propagate as exceptions in repositories. Only catch and handle retriable errors (transients, timeouts). Let services decide on 404 vs 500 based on business logic. Repositories should either return data or throw, never return synthetic fallback values.",
+      "effort": "medium",
+      "verifyNotes": "The issue is confirmed and genuine. All three repository files (curriculum, academic-profile, schedule) implement error-swallowing patterns: catch blocks that only console.error and return fallback values (empty arrays, hardcoded `1`, or fake user objects). This masks database failures from callers and returns garbage data. The academic-profile.ts case is especially problematic — returning a fake default user object with placeholder values means callers receive valid-looking data that is actually incorrect. Services have no way to detect DB failures vs. legitimate empty results. The severity is correctly rated as HIGH because it degrades data integrity and causes silent failures that are difficult to debug in production.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-architecture",
+      "title": "Shared middleware (auth-middleware) directly accesses DB instead of using a service",
+      "category": "architecture",
+      "severity": "high",
+      "locations": [
+        "src/shared/middleware/auth-middleware.ts:4,27,48,96"
+      ],
+      "evidence": "authMiddleware imports db directly and executes SQL queries to validate tokens and load user roles. It duplicates logic from repositories (finding user by code, querying section_representative). Middleware should be thin; business logic should be in services.",
+      "impact": "Tight coupling between HTTP middleware and data access. If user lookup logic changes, it must be changed in both auth.repository and auth-middleware. Violates SoC; middleware becomes a second path for auth logic outside of auth service.",
+      "remediation": "Create an AuthValidator service or move user lookup into AuthService. Middleware should call a service method to validate tokens and enrich context, not execute SQL directly. This centralizes auth logic in one place.",
+      "effort": "medium",
+      "verifyNotes": "Confirmed genuine architectural debt. The auth middleware (src/shared/middleware/auth-middleware.ts) directly imports db and executes SQL queries (lines 27-35, 48-56, 96-103) that duplicate or parallel logic in AuthRepository (findByCodeWithPassword, findActiveRepresentation). This violates AGENTS.md line 41 which states services should not import db directly—the same principle applies to middleware. The dev-code path (lines 27-56) duplicates user/role lookups already handled by repository methods. The JWT validation path (lines 96-103) performs a standalone token version check without using a repository method. Two paths to the same auth logic create maintenance risk: changes to enrollment or section_representative queries must be coordinated across both middleware and repository. The spec itself (auth.spec.md:171-182) acknowledges the middleware should validate tokenVersion against DB, but this could be extracted to a service method injected into middleware. Severity remains HIGH because: (1) duplication affects critical auth paths, (2) violates documented architecture (routes→controller→service→repository), (3) creates second entry point for auth logic, (4) all code paths functional but vulnerable to divergence.\"",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-quality",
+      "title": "Excessive console.error logging instead of structured error handling",
+      "category": "error-handling",
+      "severity": "high",
+      "locations": [
+        "src/modules/academic-profile/academic-profile.repository.ts:100,135,157,181,198,212,231,243,258,275,295",
+        "src/modules/auth/auth.service.ts:55,104,139,150",
+        "src/modules/auth/auth.repository.ts",
+        "src/modules/curriculum/curriculum.repository.ts:20,52,65,78,92,106,117",
+        "src/modules/schedule/schedule.repository.ts:77,114,132",
+        "src/modules/course-detail/course-detail.routes.ts:55,75,105,159,204,256",
+        "src/modules/grades/grades.routes.ts:114",
+        "src/modules/section-management/section-management.routes.ts:36",
+        "src/shared/middleware/auth-middleware.ts:66",
+        "src/config/env.ts:17,18"
+      ],
+      "evidence": "34 catch blocks using console.error('DB Error...') without proper logging infrastructure. Example: academic-profile.repository.ts lines 100, 135, 157, etc. all log with console.error but don't propagate context or severity level.",
+      "impact": "Production logs are not structured or searchable; error tracking is unreliable; cannot easily filter/aggregate errors; violates logging best practices for backend services",
+      "remediation": "Replace console.error calls with a logger abstraction (e.g., pino, winston, or custom AppLogger). Pass context (userId, operation name, error details) to enable proper error monitoring and debugging.",
+      "effort": "medium",
+      "verifyNotes": "Verified: 31 instances of console.error('DB Error...') pattern across 8 files (academic-profile: 11, curriculum: 7, course-detail: 3, auth.service: 4, schedule: 3, grades: 1, section-management: 1, auth-middleware: 1). Zero structured logging infrastructure in dependencies or codebase. Multiple critical paths return mock data on errors instead of propagating. Silent failures in auth context present security risks. Severity is correctly assessed as HIGH. The finding is accurate and represents genuine technical debt impacting observability and maintainability.\"",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-quality",
+      "title": "Unsafe error handling with silent fallbacks returning mock/default data",
+      "category": "error-handling",
+      "severity": "high",
+      "locations": [
+        "src/modules/academic-profile/academic-profile.repository.ts:99-112",
+        "src/modules/auth/auth.service.ts:104-132",
+        "src/modules/auth/auth.service.ts:149-165"
+      ],
+      "evidence": "findProfileByUserId() returns hardcoded fallback profile with id=userId, code='00000000', name='Usuario' on DB error (line 99-112). loginWithGoogle() returns mock user on any error (lines 104-132). me() returns default user with id=userId on error (lines 149-165). This masks real failures and may cause incorrect behavior.",
+      "impact": "Clients receive fabricated data when database fails, leading to silent failures and confusing user experiences. Errors are hidden instead of properly reported, breaking error handling contract.",
+      "remediation": "Do not return fallback data on DB errors. Let repositories throw or propagate errors. Services should catch and transform to HttpError. Routes should return proper 500 status, not mask failures with synthetic data.",
+      "effort": "medium",
+      "verifyNotes": "All three locations verified. findProfileByUserId() returns hardcoded fallback (lines 99-112) with code='00000000', name='Usuario'. loginWithGoogle() returns mock user (lines 102-132) with id=0, code='00000000', and signs a valid JWT for fake data, creating authentication bypass risk. me() returns default user (lines 148-166) with hardcoded code='00000000', fullName='Usuario'. All three patterns mask real DB failures and return fabricated data instead of propagating errors. Severity remains HIGH due to auth bypass in loginWithGoogle().\"",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-quality",
+      "title": "Weak typing with 'any' type across routes and repositories",
+      "category": "typing",
+      "severity": "high",
+      "locations": [
+        "src/modules/course-detail/course-detail.routes.ts:39,94,137,185,218,233",
+        "src/modules/curriculum/curriculum.repository.ts:50,63,89",
+        "src/modules/grades/grades.routes.ts:64,65",
+        "src/modules/db/seed/index.ts:7"
+      ],
+      "evidence": "7 instances of 'Array<any>' and 'Map<string, any>' in type assertions (e.g., line 39: 'as unknown as Array<any>', line 64-65 in grades.routes.ts). Allows any fields to be accessed without type safety.",
+      "impact": "Loss of IDE autocomplete; incorrect field accesses go undetected at compile time; refactoring is error-prone; contradicts strict mode in tsconfig.json",
+      "remediation": "Define proper TypeScript types for each query result. For example, course-detail.routes.ts line 39 should use a named type like 'SectionRow' instead of 'Array<any>'. Apply consistently across all SQL queries.",
+      "effort": "small",
+      "verifyNotes": "Verified all cited locations. 6 bare `Array<any>` casts exist in course-detail.routes.ts (lines 39, 94, 137, 185, 218, 233) that lose all type information. 3 more in curriculum.repository.ts (lines 50, 63, 89). 2 `Map<string, any>` declarations in grades.routes.ts (lines 64-65) provide zero type safety. 1 `as any` cast in seed/index.ts (line 7). All contradict strict: true in tsconfig.json. The bare `Array<any>` instances are worse than mixed patterns elsewhere (e.g., line 66 has proper type annotations). Severity remains high: full loss of IDE support and compile-time safety for these casts.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-security",
+      "title": "Permissive CORS configuration without origin validation",
+      "category": "security",
+      "severity": "high",
+      "locations": [
+        "src/server.ts:13"
+      ],
+      "evidence": "app.use(\"*\", cors()) with no parameters — allows requests from any origin",
+      "impact": "Any malicious website can make requests to the API on behalf of authenticated users, enabling cross-site request forgery (CSRF) attacks if combined with session/token theft",
+      "remediation": "Configure CORS to allow only trusted origins: cors({ origin: ['https://your-frontend.com'], credentials: true })",
+      "effort": "small",
+      "verifyNotes": "CONFIRMED: The code at src/server.ts line 13 contains `app.use(\"*\", cors())` with no parameters. According to the Hono CORS middleware TypeScript definitions (node_modules/hono/dist/types/middleware/cors/index.d.ts), the default value for the `origin` option is '*' (line 21 of the type definitions). This means the middleware allows CORS requests from ANY origin without any validation. The claim is accurate and the severity is appropriately rated as HIGH. This is a genuine security vulnerability - any malicious website can make requests to this API on behalf of authenticated users, enabling cross-site request forgery (CSRF) attacks if the application uses session/cookie-based authentication or tokens that are automatically sent with requests. The fix would require specifying an explicit origin or origin validation function, e.g., `cors({ origin: 'https://trusted-domain.com' })` or implementing a dynamic origin validator.\"",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-testing",
+      "title": "Generic catch-all error handling masking root causes",
+      "category": "error-handling",
+      "severity": "high",
+      "locations": [
+        "src/shared/middleware/error-handler.ts:18",
+        "src/modules/schedule/schedule.repository.ts:76-79",
+        "src/modules/course-detail/course-detail.routes.ts:113-116"
+      ],
+      "evidence": "Error handler logs 'Unhandled error: [error]' without context (line 18). Schedule repository catches all errors and returns empty arrays silently (e.g., line 77). Grades route catches exceptions but returns empty data structures instead of proper error responses. 42 console.error() calls total with inconsistent error context.",
+      "impact": "Operators cannot diagnose failures. Which query failed? What parameters? What was the error code? All lost in generic logs. Hard to debug production issues. Data loss becomes undetectable (empty arrays can't distinguish 'no data' from 'database down').",
+      "remediation": "Add structured logging with request context (userId, endpoint, query). Log error stack + code + original cause. Return appropriate HTTP status codes (500, 503, 504) instead of 200 with empty data.",
+      "effort": "medium",
+      "verifyNotes": "The technical debt is genuine and systemic. The error-handler.ts line 18 does log generically without context. Schedule/curriculum/course-detail repositories consistently catch all errors and return empty arrays, making failures undetectable from legitimate empty results. Total console.error() calls are ~58 (claim cited 42). The lack of contextual information (request URL, parameters, user ID, database error codes, structured error logging) makes production debugging extremely difficult. Silent failures on database errors are a significant operational risk, justifying 'high' severity. The pattern is replicated across 6+ modules.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-testing",
+      "title": "No input validation on numeric route parameters",
+      "category": "validation",
+      "severity": "high",
+      "locations": [
+        "src/modules/course-detail/course-detail.routes.ts:118",
+        "src/modules/course-detail/course-detail.routes.ts:165",
+        "src/modules/course-detail/course-detail.routes.ts:209"
+      ],
+      "evidence": "Routes like /sections/:sectionId directly convert params to Number without validation: const sectionId = Number(c.req.param('sectionId')); — no check for NaN, negative, or malformed input. Zod validation only used in validateJson/Query/Params helpers, NOT in route-level param parsing. Routes pass unconverted strings to database queries.",
+      "impact": "Invalid sectionId values (e.g., 'abc', -1, 999999) passed to database without validation. SQL queries may silently return no results or unexpected data. No client feedback on invalid input. Potential for injection if parameter handling is incorrect downstream.",
+      "remediation": "Use validateParams middleware for all numeric/UUID route parameters. Add Zod schemas for :sectionId, :studentId, etc. Validate before querying database.",
+      "effort": "small",
+      "verifyNotes": "Confirmed: Three routes (lines 118, 165, 210) in course-detail.routes.ts convert route params with Number() without validation. A Zod schema and validateParams() helper exist but are unused. Invalid inputs (NaN, negative, non-existent IDs) pass silently to SQL, returning empty results without client feedback. Same pattern appears in curriculum.controller.ts. Severity remains high - primary risk is silent failures and poor error handling rather than SQL injection (Drizzle parameterizes queries). The infrastructure for validation exists but is not implemented, suggesting developer oversight.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-testing",
+      "title": "Database connection not validated at startup",
+      "category": "reliability",
+      "severity": "high",
+      "locations": [
+        "src/db/index.ts",
+        "src/node-server.ts"
+      ],
+      "evidence": "src/db/index.ts creates drizzle client and postgres connection but never tests connectivity: const client = postgres(config.db.url); export const db = drizzle(client, {...}); Server starts immediately in node-server.ts without health check. No await on connection pool warmup. DATABASE_URL validation only in env.ts (Zod check), not actual connection test.",
+      "impact": "Server starts successfully even if database is unreachable. First request fails. Clients get 500 errors or timeout waiting for database connection. No clear startup failure signal.",
+      "remediation": "Add async database health check in app startup: test connection, log success/failure, exit with status 1 if database unavailable.",
+      "effort": "small",
+      "verifyNotes": "Confirmed genuine issue. The database client is created synchronously in src/db/index.ts without awaiting or testing connectivity. The postgres library doesn't connect immediately—it defers connection until the first query. Node server in src/node-server.ts starts accepting requests before any DB health check occurs. The /health endpoint in src/server.ts returns static OK without querying the database. Environment validation only checks URL format via Zod, not actual connectivity. This results in the server appearing healthy while being unable to service requests, causing 500 errors or timeouts on first DB-dependent request. Severity is high (not critical) because it impacts reliability and user experience but doesn't cause data loss or security issues.\"",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-architecture",
+      "title": "God file: malla_page.dart at 1145 lines",
+      "category": "architecture",
+      "severity": "high",
+      "locations": [
+        "lib/pages/malla/malla_page.dart"
+      ],
+      "evidence": "1145-line page file containing 15+ nested widget classes (_ProgressBar, _Chip, _ZoomToolbar, _IconBtn, _MallaCanvas, _SectionLabel, _PoolDivider, _CourseDetailSheet, _PrereqList, _PrereqRow, _InfoTag, _PillStatus, _SilaboLink) with complex business logic mixed into UI. The _MallaCanvasState class alone spans 175 lines (321-485) with custom zoom/pan transformation logic embedded directly in the widget.",
+      "impact": "Hard to maintain, test, and reason about. Any change to malla curriculum display requires navigating deeply nested private widget classes. Zoom/pan logic tightly coupled to widget lifecycle. Prerequisite calculation logic embedded in UI rendering.",
+      "remediation": "Extract nested classes into separate files: create `course_card_sheet.dart` for detail sheet, `malla_zoom_handler.dart` for transformation logic, move prerequisite display logic to a dedicated `prerequisite_display.dart` component. Move all coordinate calculations to MallaController.",
+      "effort": "large",
+      "verifyNotes": "CONFIRMED: The file malla_page.dart is indeed 1145 lines and is a significant \"god file\" with critical architecture issues. However, the severity should be corrected to HIGH rather than CRITICAL for practical reasons:\n\nVERIFIED DETAILS:\n- File size: Exactly 1145 lines as claimed\n- Nested private widget classes: 14 total (not 15+ as claimed, but close enough)\n  * _ProgressBar (lines 51-116)\n  * _Chip (lines 118-173)\n  * _ZoomToolbar (lines 176-284)\n  * _IconBtn (lines 286-310)\n  * _MallaCanvas + _MallaCanvasState (lines 313-688)\n  * _PoolDivider (lines 690-724)\n  * _SectionLabel (lines 727-752)\n  * _CourseDetailSheet (lines 755-968)\n  * _PrereqList (lines 970-1018)\n  * _PrereqRow (lines 1020-1050)\n  * _InfoTag (lines 1052-1083)\n  * _PillStatus (lines 1085-1108)\n  * _SilaboLink (lines 1110-1145)\n\nINACCURACY IN CLAIM: _MallaCanvasState spans lines 321-688 (368 lines total), NOT 175 lines as stated. The claim cited lines 321-485 which is only 165 lines. The class actually extends to line 688. This is even WORSE than claimed.\n\nISSUE SEVERITY CORRECTION - HIGH (not CRITICAL):\nWhile the file is problematic, it's not at critical severity because:\n1. The nested widgets are relatively well-separated and encapsulated\n2. The zoom/pan logic (_scheduleFocusIfNeeded, _scheduleZoomIfNeeded, _handleTransformationChanged, _matrixForFocus) is cleanly factored into private methods within _MallaCanvasState\n3. Prerequisites logic is in _PrereqList which is self-contained\n4. CourseDetailSheet (_CourseDetailSheet) is also self-contained\n5. A related malla_controller.dart (317 lines) exists to handle business logic\n6. Separate widget files exist (course_card.dart, prerequisite_painter.dart)\n\nThe true issue is organizational: the file could be extracted into 4-5 separate files but it's not completely unmaintainable as-is. HIGH severity is appropriate—significant refactoring needed but not blocking development.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-architecture",
+      "title": "God file: perfil.dart at 955 lines",
+      "category": "architecture",
+      "severity": "high",
+      "locations": [
+        "lib/pages/perfil/perfil.dart"
+      ],
+      "evidence": "955-line profile page containing 13 nested widget classes (_ProfileHeader, _CarreraCard, _ConfigAcademicaSection, _EspecialidadCard, _EspecialidadSheet with its own State class spanning 213 lines, _PrincipalChip, _InteresChip, _SheetEspecialidadRow, _SheetChip, _LogoutButton). _EspecialidadSheetState (lines 513-724) contains initialization, save logic with API calls, and complex UI state management mixed together.",
+      "impact": "Monolithic page with 13 private classes makes testing impossible (no way to test individual chip logic). Changes to specialty selection logic require modifying page file. UI and business logic inextricably linked.",
+      "remediation": "Extract _EspecialidadSheet and its state into `especialidad_sheet.dart`. Create reusable `principal_chip.dart`, `interes_chip.dart`, `carrera_card.dart` components. Move specialty selection logic to a dedicated ProfileController (currently empty).",
+      "effort": "large",
+      "verifyNotes": "Verified: The file is 955 lines with 11 nested private widget classes (claim said 13 - slight overcount). _EspecialidadSheetState (lines 513-725) is exactly 213 lines and contains mixed concerns: initialization (lines 519-524), data filtering (_opciones getter, lines 526-539), state mutations (lines 541-561), API call to auth.completeSetup() (lines 563-572), and complex UI rendering (lines 575-723). No test file found. The architecture violates the project's established pattern of extracting widgets into separate files (as seen in lib/pages/malla/widgets/). However, severity should be 'high' not 'critical' because: (1) file is primarily UI-focused rather than a typical monolithic business-logic god file, (2) API interaction is minimal/isolated, and (3) individual nested classes are relatively focused. Main impact is testability and maintainability, not functional risk.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-architecture",
+      "title": "Inconsistent state management patterns across codebase",
+      "category": "state-management",
+      "severity": "high",
+      "locations": [
+        "lib/pages/home/home_page.dart",
+        "lib/pages/setup_carrera/setup_carrera_page.dart",
+        "lib/pages/perfil/perfil.dart",
+        "lib/pages/horario/horario_controller.dart"
+      ],
+      "evidence": "HomePage uses StatefulWidget with setState() for tab navigation (_currentIndex) instead of controller (line 26-42). SetupCarreraPage uses GetxController with step.obs but card expansion state lives in _EspecialidadCardState. HorarioController uses update() (line 61) for non-reactive updates alongside .obs properties. CalculadoraController initializes services in onInit but services are instantiated as final fields (lines 22-24).",
+      "impact": "Mix of setState, Getx Obx/GetView, update() calls, and manual state management makes code unpredictable. Hard for new developers to know which pattern to use. Inconsistent testing approach.",
+      "remediation": "Standardize on GetX pattern throughout: convert HomePage to GetView<HomeController>, move _currentIndex to HomeController as selectedTabIndex.obs. Convert HorarioController update() call to horarioState.refresh() or use explicit .obs reactivity. Document state management pattern in ARCHITECTURE.md.",
+      "effort": "large",
+      "verifyNotes": "Verified across all cited files. HomePage uses setState() instead of Getx controller (controller created but unused). SetupCarreraPage mixes Getx (controller with .obs) + StatefulWidget (_EspecialidadCardState with local expansion state). HorarioController mixes .obs properties with update() calls (line 61). ProfilePage uses StatefulWidget (_EspecialidadSheetState) for local state alongside Getx patterns. CalculadoraController has redundant late-var + onInit initialization. The inconsistency is genuine and spans multiple architectural patterns. Severity corrected from \"high\" remains appropriate - this is a maintainability debt but not a functional bug.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-architecture",
+      "title": "Service instantiation duplication and inconsistent patterns",
+      "category": "architecture",
+      "severity": "high",
+      "locations": [
+        "lib/pages/descripcion_cursos/descrip_cursos_controller.dart",
+        "lib/pages/calculadora/calculadora_controller.dart",
+        "lib/pages/malla/malla_page.dart",
+        "lib/main.dart"
+      ],
+      "evidence": "DescripCursosController creates 4 services via new() on lines 14-17. CalculadoraController creates 3 services in onInit (lines 22-24). Some services use singleton factory pattern (CoursesService, NotasService, EvaluationSyllabusService with _instance) while AuthService and MallaService use Get.put(). MallaPage instantiates EvaluationSyllabusService() directly (line 1116). main.dart directly awaits CoursesService() and EvaluationSyllabusService() (lines 30-31).",
+      "impact": "No clear dependency injection. Service lifecycle unpredictable. Multiple instances possible even for singleton-intended services. Hard to test; impossible to mock services.",
+      "remediation": "Standardize all services to use GetxService with Get.put() in main.dart. Remove factory singleton constructors. Create service_locator.dart that initializes all services. Update controllers to use Get.find<ServiceName>() instead of new() and final fields.",
+      "effort": "medium",
+      "verifyNotes": "CONFIRMED: Service instantiation is genuinely inconsistent across the codebase. Three patterns coexist: (1) Manual singleton factories (CoursesService, NotasService, EvaluationSyllabusService) instantiated directly via new(), (2) GetX GetxService pattern (AuthService, MallaService, StorageService) managed via Get.put/Get.find, (3) Plain classes instantiated freely (SeccionService, AnuncioService, AsesoriaService, ContactoService). Main.dart directly instantiates EvaluationSyllabusService and CoursesService without GetX registration (lines 30-31). CalculadoraController and MallaPage also directly instantiate singleton-pattern services. This creates a confusing architecture with no unified dependency management, making testing and mocking difficult. Severity remains HIGH because: (a) multiple service instances could theoretically exist despite singleton intent, (b) no true DI pattern in place, (c) testing/mocking nearly impossible. The code works in practice due to careful singleton factory implementation and GetX's static accessors, but architectural clarity is poor.\"",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-quality",
+      "title": "Hardcoded colors scattered throughout codebase instead of centralized theme",
+      "category": "duplication",
+      "severity": "high",
+      "locations": [
+        "lib/pages/malla/malla_page.dart:1029",
+        "lib/pages/malla/malla_page.dart:1121-1122",
+        "lib/pages/horario/horario.dart:42-43",
+        "lib/pages/horario/horario.dart:56",
+        "lib/pages/horario/horario.dart:72",
+        "lib/pages/horario/horario.dart:88",
+        "lib/pages/horario/horario.dart:91",
+        "lib/pages/horario/horario.dart:98-99",
+        "lib/pages/horario/horario.dart:138-139",
+        "lib/pages/horario/horario.dart:151-152",
+        "lib/pages/setup_carrera/setup_carrera_page.dart:21",
+        "lib/pages/setup_carrera/setup_carrera_page.dart:59",
+        "lib/pages/setup_carrera/setup_carrera_page.dart:126",
+        "lib/pages/setup_carrera/setup_carrera_page.dart:134",
+        "lib/pages/setup_carrera/setup_carrera_page.dart:152",
+        "lib/pages/setup_carrera/setup_carrera_page.dart:162"
+      ],
+      "evidence": "Hardcoded Color(0xFF...) constants in horario.dart, setup_carrera_page.dart, malla_page.dart instead of using MaterialTheme helper methods defined in lib/configs/themes.dart which already has pageBg(), cardBg(), textPrimary(), etc.",
+      "impact": "Impossible to maintain consistent theming; fixing colors requires changes in multiple files; dark mode inconsistencies; violates DRY principle; makes theme evolution difficult",
+      "remediation": "Extract all hardcoded colors to MaterialTheme static methods in lib/configs/themes.dart (similar to existing pageBg, cardBg, textPrimary patterns); replace inline Color() calls with MaterialTheme.myColor(brightness)",
+      "effort": "medium",
+      "verifyNotes": "Confirmed: Hardcoded colors scattered throughout horario.dart, setup_carrera_page.dart, and parts of malla_page.dart. The themes.dart file defines 50+ color helper methods (pageBg, cardBg, textPrimary, textSecondary, borderColor, labelColor, specialtyBg, etc.), and malla_page.dart and perfil.dart demonstrate proper usage. However, horario.dart has 11+ hardcoded Color(0xFF...) constants on the cited lines, and setup_carrera_page.dart has 30+ hardcoded colors instead of using MaterialTheme helpers. This violates DRY, breaks dark mode consistency, and makes theme maintenance difficult. Severity is high (not critical) because the infrastructure exists - it's a refactoring debt rather than a missing feature.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-quality",
+      "title": "No test coverage for the entire codebase",
+      "category": "testing",
+      "severity": "high",
+      "locations": [
+        "test/ directory does not exist"
+      ],
+      "evidence": "Zero test files found in repository; flutter_test package in dev_dependencies but no test directory present; no unit, widget, or integration tests",
+      "impact": "No regression detection; risky refactoring; impossible to verify business logic; poor code quality assurance; violates software engineering best practices for a university course project",
+      "remediation": "Create test/ directory; write unit tests for models and services (5-10 critical paths); write widget tests for key pages; aim for 50%+ coverage minimum",
+      "effort": "large",
+      "verifyNotes": "Confirmed: zero test files in 56-file codebase (9,166 LOC). flutter_test in dev_dependencies but never used. No test directory, no test frameworks configured, no test infrastructure. Absolute absence of unit, widget, or integration tests for substantial Flutter application. Severity is high (or critical for university coursework where testing is typically required).",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-security",
+      "title": "No HTTPS enforcement or certificate validation",
+      "category": "security",
+      "severity": "high",
+      "locations": [
+        "lib/services/api_client.dart",
+        "pubspec.yaml:36"
+      ],
+      "evidence": "ApiClient uses the standard http package without any HttpClient configuration, SecurityContext setup, BadCertificateCallback handlers, or certificate pinning. The code does not validate SSL/TLS certificates or enforce HTTPS.",
+      "impact": "The app will accept any HTTPS certificate, including self-signed or revoked certificates. This enables SSL/TLS stripping attacks and man-in-the-middle attacks on production traffic where attackers can intercept and modify API responses.",
+      "remediation": "Implement certificate pinning or at minimum enforce HTTPS certificate validation. For the http package: (1) Create an HttpClient with custom SecurityContext, (2) Implement onBadCertificate callback that throws on untrusted certs, (3) Use a package like dio with certificate pinning support, or (4) Use platform-specific certificate pinning via native code.",
+      "effort": "medium",
+      "verifyNotes": "The issue is real: the ApiClient uses the standard http package without certificate pinning or custom SecurityContext configuration. However, the claim's justification is partially inaccurate. The code does NOT accept self-signed certificates by default on iOS/Android (platforms validate against system cert stores by default), but it IS vulnerable to MITM attacks if a CA is compromised since there's no certificate pinning. The real security debt is the lack of certificate pinning/custom validation and the use of HTTP URLs in default baseUrl (lines 30-34). This is high severity for production use with sensitive data (educational records, authentication tokens) but the specific claim about self-signed certificates being accepted needs correction. The app should implement certificate pinning for the production API domain to defend against CA compromise.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-testing",
+      "title": "No error UI state for API failures — silent failures and data loss",
+      "category": "error-handling",
+      "severity": "high",
+      "locations": [
+        "lib/pages/calculadora/calculadora_controller.dart:30-40,42-96",
+        "lib/pages/descripcion_cursos/descrip_cursos_controller.dart:48-50",
+        "lib/pages/malla/malla_controller.dart:79-98"
+      ],
+      "evidence": "When API calls fail (e.g., `_syllabusService.loadEvaluationData()` in calculadora_controller line 30), errors are caught and printed to console but user sees no error message or retry option. The page silently shows empty state. In malla_controller, `_malla.load()` (line 82) could throw but only sets `loading = false` without showing error UI.",
+      "impact": "Users don't know if data failed to load or is genuinely empty. No retry mechanism. Network errors are invisible, leading to frustration and false support requests.",
+      "remediation": "Add `errorMessage` RxnString to controllers. Show SnackBar or error widget when API fails. Provide retry button. Example: `} catch (e) { errorMessage.value = 'Failed to load: $e'; }`",
+      "effort": "medium",
+      "verifyNotes": "CONFIRMED: All three locations show the exact pattern claimed - API failures are caught and printed to console only, with no observable error state exposed to the UI layer. Pages display empty states that cannot distinguish between legitimate empty data and load failures. No retry mechanisms exist. The calculadora page shows \"No hay notas registradas\" even if the API call failed. The malla_controller shows only a loading spinner that never indicates failure. The descrip_cursos_controller clears all data on error with no user-visible error message. This is a legitimate high-severity issue for UX and data reliability.\"",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-testing",
+      "title": "No offline/fallback handling — app is completely online-dependent",
+      "category": "error-handling",
+      "severity": "high",
+      "locations": [
+        "lib/services/api_client.dart",
+        "lib/services/courses_service.dart",
+        "lib/services/evaluations_service.dart",
+        "pubspec.yaml"
+      ],
+      "evidence": "No connectivity package. All API calls in courses_service, evaluations_service, malla_service, anuncio_service, etc. will fail silently if network is unavailable. No caching layer, no local fallback data, no retry logic.",
+      "impact": "App is unusable without network. Fetched data is not cached, so re-opening the app requires re-download. No graceful degradation.",
+      "remediation": "Cache API responses in SharedPreferences with TTL. Add connectivity_plus to detect offline mode. Implement retry logic with exponential backoff in ApiClient. Show 'offline mode' UI when network unavailable.",
+      "effort": "large",
+      "verifyNotes": "The claim is substantially accurate. Code analysis confirms: (1) pubspec.yaml has NO connectivity_plus or similar network monitoring package (only http, shared_preferences, google_sign_in, etc.); (2) api_client.dart has zero retry logic or timeout handling—bare http.Request.send() with no error recovery; (3) CoursesService, EvaluationsService, AnuncioService, AsesoriaService, EnrollmentService all follow the same pattern: API call → catch-all that either rethrows or returns empty list []; (4) NO data caching to SharedPreferences for API responses—only NotasService and StorageService use SharedPreferences, but only for session/setup data, not fetched course/evaluation/announcement data; (5) Fetch failures are logged but silently fail with empty collections (return []). The only partial mitigation is CoursesService has idempotent loading (if _isLoaded return), but this only avoids re-fetching within a session—doesn't help when reopening the app. MallaService uses in-memory caching but requires network load() first. StorageService saves setup/specialties/statuses locally but not API-fetched data. Severity remains HIGH—app cannot function offline and has no graceful degradation for network failures.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-testing",
+      "title": "Hardcoded API base URLs for localhost development",
+      "category": "config",
+      "severity": "high",
+      "locations": [
+        "lib/services/api_client.dart:24-35"
+      ],
+      "evidence": "ApiClient hardcodes localhost URLs: `if (kIsWeb) return 'http://localhost:3000'; if (defaultTargetPlatform == TargetPlatform.android) { return 'http://10.0.2.2:3000'; } return 'http://localhost:3000';`. These only work in dev. Uses String.fromEnvironment('API_BASE_URL') as override but the hardcoded defaults ensure it falls back to localhost if env var is not set.",
+      "impact": "App won't work when built for production without environment variable. Release builds will attempt to connect to non-existent localhost, causing all API calls to fail with cryptic network errors. Users see blank screens.",
+      "remediation": "Move hardcoded URLs to a config file or environment-based initialization. Require API_BASE_URL env var for all builds, or provide separate dev/prod flavors. Use build flavor detection to set correct URL at compile time.",
+      "effort": "small",
+      "verifyNotes": "Verified: The code does hardcode localhost URLs (lines 24-35 of api_client.dart) with only a String.fromEnvironment fallback that is not documented or configured in any build files. The claim is accurate. The severity of 'high' is justified because: (1) there is zero documentation on how to set API_BASE_URL for production builds, (2) no CI/CD pipeline or build configuration shows this being set, (3) without it, all API calls fail silently with network errors, (4) users see blank screens. The code properly checks if the env var is set and trimmed before using it, but the lack of any production build documentation or process means developers may unwittingly ship releases pointing to localhost.\"",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-testing",
+      "title": "Unhandled exceptions in async initialization — main() bootstrap",
+      "category": "error-handling",
+      "severity": "high",
+      "locations": [
+        "lib/main.dart:17-45"
+      ],
+      "evidence": "Line 29-32: `Future.wait([EvaluationSyllabusService().loadEvaluationData(), CoursesService().loadCoursesData()])` has no error handling. If either service fails, the entire app bootstrap fails with an unhandled exception. Line 35: `tryRestoreSession()` can throw if storage is unavailable.",
+      "impact": "App crashes on startup if any critical service fails to load. No graceful fallback, no splash screen showing error, no retry mechanism. Users get a crash with no context.",
+      "remediation": "Wrap Future.wait in try-catch. Log errors and continue with defaults (empty courses list, skip session restore). Show error UI to user with retry option if critical services fail.",
+      "effort": "medium",
+      "verifyNotes": "Confirmed: The Future.wait() on lines 29-32 of lib/main.dart has NO error handling, and both services explicitly rethrow exceptions. If either EvaluationSyllabusService().loadEvaluationData() or CoursesService().loadCoursesData() fails, the exception propagates uncaught and crashes the app during bootstrap with no splash screen, user feedback, or retry mechanism. Both services fetch user-specific data (conditional on AuthService.to.currentUser?.code), making failure possible if the API is unavailable or returns an error. The tryRestoreSession() call at line 35 has internal try-catch handling and won't crash at that point. Severity is correctly classified as HIGH because this is a complete app startup failure with no graceful degradation, though it's conditional on external API availability rather than a deterministic logic error.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-architecture",
+      "title": "Inconsistent response envelope formats across modules",
+      "category": "architecture",
+      "severity": "medium",
+      "locations": [
+        "src/modules/auth/auth.service.ts:40-52",
+        "src/modules/grades/grades.routes.ts:112",
+        "src/modules/academic-profile/academic-profile.service.ts:21-27",
+        "src/modules/course-detail/course-detail.routes.ts:41-53"
+      ],
+      "evidence": "Auth returns { token, tokenType, expiresIn, user }. Grades returns { cursos, syllabi }. Academic profile returns { profile, specialties }. Course detail returns { secciones, syllabi } or { docentes } or { alumnos }. No consistent shape. Some services wrap data in an object, others return arrays directly.",
+      "impact": "Frontend must handle different response structures per endpoint. Harder to build generic HTTP client utilities. Makes API contracts fragile and harder to document consistently.",
+      "remediation": "Define a standard envelope: either wrap all responses in { data: T } or { [resourceName]: T }. Add response schemas alongside request schemas in each module. Document the pattern in AGENTS.md.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-architecture",
+      "title": "EventBus initialized as singleton but never actually used for domain events",
+      "category": "architecture",
+      "severity": "medium",
+      "locations": [
+        "src/events/event-bus.ts",
+        "src/events/event-types.ts",
+        "src/events/index.ts:1-3",
+        "src/events/observers/academic-risk.observer.ts"
+      ],
+      "evidence": "EventBus is wired into all services as a dependency, but DomainEventMap is an empty Record<string, unknown>. Observers are registered but are no-ops (e.g., registerAcademicRiskObserver does nothing). Services receive EventBus but never publish to it.",
+      "impact": "Dead code path. EventBus exists but serves no purpose. Services cannot trigger side effects (like creating alerts when grade averages change). Domain-driven design infrastructure is in place but not utilized.",
+      "remediation": "Either remove EventBus and observer infrastructure if not yet needed, or populate DomainEventMap with real events (e.g., GradeUpdated, SpecialtyChanged) and implement observers that act on them. Update registerEventObservers() to actually register handlers.",
+      "effort": "medium",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-architecture",
+      "title": "No separation of concerns: Repositories use complex query logic instead of SQL-builder queries or ORM queries",
+      "category": "architecture",
+      "severity": "medium",
+      "locations": [
+        "src/modules/auth/auth.repository.ts",
+        "src/modules/schedule/schedule.repository.ts",
+        "src/modules/curriculum/curriculum.repository.ts"
+      ],
+      "evidence": "All repositories use raw sql`` template strings with inline parameter substitution instead of Drizzle ORM query builder methods. Queries are long inline SQL blocks (50-100 lines per query in some cases) embedded in method bodies. No query composition or reusable query fragments.",
+      "impact": "SQL queries are scattered across many methods. Hard to validate correctness or reuse query logic. Difficult to test in isolation. Drizzle ORM is imported but not used, suggesting inconsistent adoption of the ORM layer.",
+      "remediation": "Either fully adopt Drizzle query builder (use .select(), .from(), .where(), etc. methods) for consistency and type safety, or document why raw SQL was chosen. If staying with raw SQL, extract complex queries into methods with descriptive names and add validation/comments.",
+      "effort": "large",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-architecture",
+      "title": "Auth repository returns both sanitized and unsanitized user data inconsistently",
+      "category": "error-handling",
+      "severity": "medium",
+      "locations": [
+        "src/modules/auth/auth.repository.ts:88-94",
+        "src/modules/auth/auth.service.ts:37-39"
+      ],
+      "evidence": "findByCodeWithPassword() returns passwordHash alongside other user fields, relying on the service to delete it (line 38: delete safeUser.passwordHash). This is fragile: if a developer forgets the delete, passwords leak. Repository should never return passwordHash to service.",
+      "impact": "Risk of accidental password hash exposure if service logic changes. Violates the principle that sensitive data should be filtered at the boundary (repository), not in the business logic layer.",
+      "remediation": "Modify findByCodeWithPassword() to return a type that excludes passwordHash from the main user object, or return it in a separate field. Service should receive { user: AuthUser, passwordHash: string } so the password is clearly separated and never mixed into the token.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-architecture",
+      "title": "No input validation in routes that bypass controller layer",
+      "category": "error-handling",
+      "severity": "medium",
+      "locations": [
+        "src/modules/grades/grades.routes.ts:9-11",
+        "src/modules/course-detail/course-detail.routes.ts:110-115",
+        "src/modules/section-management/section-management.routes.ts:9-10"
+      ],
+      "evidence": "Routes extract path parameters (e.g., sectionId) with c.req.param() and query params with c.req.query() without validation. No Zod schema applied. Controllers in other modules use validateJson, validateQuery, validateParams but these route handlers don't.",
+      "impact": "Invalid inputs are passed to SQL queries unchecked. Malformed path params become NaN or null and produce unexpected query results. No consistent error response for invalid input.",
+      "remediation": "Apply validateParams() and validateQuery() in all route handlers before using the values. Define schemas in module .schemas.ts files for consistency with the rest of the codebase.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-architecture",
+      "title": "Duplicate and inconsistent user/role mapping logic across layers",
+      "category": "duplication",
+      "severity": "medium",
+      "locations": [
+        "src/modules/auth/auth.repository.ts:47-50",
+        "src/shared/middleware/auth-middleware.ts:58-61",
+        "src/modules/course-detail/course-detail.routes.ts:32"
+      ],
+      "evidence": "Role mapping (delegate/subdelegate → spelled-out role strings) is implemented three separate places with three different implementations. AuthRepository has mapRole(). Auth-middleware has its own inline logic. CourseDetail routes do inline ternary logic. All use slightly different enum values or spellings.",
+      "impact": "If the role enum or mapping changes, three places must be updated. Inconsistent spellings (delegado vs delegate) can cause bugs. Makes the domain model unclear.",
+      "remediation": "Create a single RoleMapper utility in shared/utils or shared/types. All modules should import and use it. Define the canonical role enum and mapping there.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-quality",
+      "title": "Duplicated day name array and helper functions across modules",
+      "category": "duplication",
+      "severity": "medium",
+      "locations": [
+        "src/modules/course-detail/course-detail.routes.ts:6",
+        "src/modules/schedule/schedule.service.ts:81-82,130,139"
+      ],
+      "evidence": "Day name array ['Lunes', 'Martes', ...] is hardcoded in 4 separate locations: course-detail.routes.ts:6, schedule.service.ts:82 (activeDayName), line 130, and line 139. Similarly, splitName() function duplicated in auth.repository.ts:34 and course-detail.routes.ts:7.",
+      "impact": "Maintenance burden; changes to day names require updates in multiple places; increases cognitive load; violates DRY principle",
+      "remediation": "Extract day names and utility functions to shared module (e.g., src/shared/utils/formatters.ts). Create constants: const DAY_NAMES = ['Lunes', ...]; function splitName(); function dayName().",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-quality",
+      "title": "Hard-coded magic strings and values without constants",
+      "category": "complexity",
+      "severity": "medium",
+      "locations": [
+        "src/modules/auth/auth.repository.ts:204",
+        "src/modules/auth/auth.service.ts:109,157",
+        "src/modules/academic-profile/academic-profile.repository.ts:104,106,109,110",
+        "src/modules/course-detail/course-detail.routes.ts:153,249",
+        "src/modules/schedule/schedule.service.ts:54"
+      ],
+      "evidence": "Magic values: '2026-1' (default cycle, used 3 times), '00000000' (fallback code, used 4 times), '--' (fallback strings, used 3 times), hardcoded April 6, 2026 date (line 54). These are domain constants that should be centralized.",
+      "impact": "Hard to maintain; inconsistent fallbacks across the codebase; coupling to hardcoded values makes the system brittle if periods change",
+      "remediation": "Create src/config/constants.ts with: DEFAULT_CYCLE = '2026-1', FALLBACK_USER_CODE = '00000000', FALLBACK_STRING = '--', ACTIVE_PERIOD_START = new Date(2026, 3, 6). Reference from config.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-quality",
+      "title": "Large repository files with multiple responsibilities",
+      "category": "architecture",
+      "severity": "medium",
+      "locations": [
+        "src/modules/academic-profile/academic-profile.repository.ts:299 lines",
+        "src/modules/auth/auth.repository.ts:268 lines"
+      ],
+      "evidence": "academic-profile.repository.ts has 299 lines with 12 public methods handling: profile queries, specialty queries, career queries, specialty operations, setup completion. auth.repository.ts has 268 lines with 6 public methods + 2 private methods; contains user queries, specialty mapping, course mapping logic.",
+      "impact": "Harder to test, understand, and maintain; methods are not cohesive; violates Single Responsibility Principle; increases change impact",
+      "remediation": "Split academic-profile.repository.ts into: ProfileRepository (user profile, setup), SpecialtyRepository (specialty CRUD, selection). Split auth.repository.ts into: AuthRepository (core auth), AuthUserMapper (specialty + course mapping). Keep repositories focused on one entity/domain.",
+      "effort": "large",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-quality",
+      "title": "Inconsistent error handling patterns across route handlers",
+      "category": "error-handling",
+      "severity": "medium",
+      "locations": [
+        "src/modules/course-detail/course-detail.routes.ts:113-116,204-206",
+        "src/modules/grades/grades.routes.ts:113-116",
+        "src/modules/section-management/section-management.routes.ts:36-38"
+      ],
+      "evidence": "Some route handlers catch and return empty arrays/objects without HTTP error response (course-detail line 113-116, grades line 114-115, section-management line 36-37). Others propagate errors (auth.service throws HttpError). Inconsistent behavior for same error type.",
+      "impact": "Client cannot distinguish database failures from empty results; 200 status code returned for failures; API contract violation; difficult to debug in production",
+      "remediation": "Standardize: all DB errors in routes should be caught and thrown as HttpError(500, msg, code). Let global error handler (error-handler.ts) transform to JSON response with proper status.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-security",
+      "title": "Excessive debugging information leaked in error logs and catch blocks",
+      "category": "information-disclosure",
+      "severity": "medium",
+      "locations": [
+        "src/modules/auth/auth.service.ts:55,104,140,150",
+        "src/shared/middleware/auth-middleware.ts:66",
+        "src/shared/middleware/error-handler.ts:18",
+        "src/modules/course-detail/course-detail.routes.ts:55,75,159,205",
+        "src/modules/grades/grades.routes.ts:114"
+      ],
+      "evidence": "42 instances of console.error() throughout the codebase logging raw database errors and exceptions without sanitization (e.g., 'DB Error in auth.service login', 'DB Error in /sections/[id]/announcements'). These logs may contain SQL, connection strings, schema names, and stack traces in production.",
+      "impact": "Server logs (if persisted) will contain detailed error traces that reveal database schema, table/column names, connection info, and SQL queries, aiding attackers in crafting targeted attacks",
+      "remediation": "Replace console.error() with structured logging that sanitizes sensitive data. Log only error codes and generic messages in production; store full errors securely for debugging only in development or logs with restricted access",
+      "effort": "medium",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-security",
+      "title": "Weak password validation allows trivial passwords",
+      "category": "authentication",
+      "severity": "medium",
+      "locations": [
+        "src/modules/auth/auth.schemas.ts:5"
+      ],
+      "evidence": "loginSchema validates password as z.string().min(1) — only requires 1 character. No check for minimum length, complexity, or special characters.",
+      "impact": "Users can set single-character passwords, significantly reducing entropy and making password-based auth vulnerable to brute force attacks",
+      "remediation": "Enforce minimum password length (e.g., min(8)) and optionally require complexity (uppercase, lowercase, digit, special char) in both schema validation and password change operations",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-security",
+      "title": "Missing rate limiting on authentication endpoints",
+      "category": "security",
+      "severity": "medium",
+      "locations": [
+        "src/modules/auth/auth.routes.ts"
+      ],
+      "evidence": "No rate limiting or brute-force protection on POST /auth/login, POST /auth/google, or any other endpoints. Attackers can make unlimited login attempts.",
+      "impact": "Brute force and credential stuffing attacks are not rate-limited, allowing attackers to efficiently test many credential combinations",
+      "remediation": "Implement rate limiting middleware (e.g., via IP or user account) on auth endpoints. Enforce exponential backoff or account lockout after N failed attempts.",
+      "effort": "medium",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-security",
+      "title": "Token version validation does not prevent token reuse after logout",
+      "category": "authentication",
+      "severity": "medium",
+      "locations": [
+        "src/shared/middleware/auth-middleware.ts:96-103",
+        "src/modules/auth/auth.repository.ts:55-64"
+      ],
+      "evidence": "authMiddleware checks tokenVersion from DB (line 101: dbTokenVersion !== tokenVersion) but logout() increments version asynchronously. If logout() is called but a request with old token arrives before version increment completes, the old token remains valid.",
+      "impact": "Race condition in logout: a user's old JWT may still be accepted briefly after logout() is called, allowing brief window of unauthorized access",
+      "remediation": "Either (a) use a token blacklist with immediate invalidation, or (b) ensure logout writes version increment synchronously before returning success to client",
+      "effort": "medium",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-security",
+      "title": "JWT_SECRET minimum length requirement is weak",
+      "category": "authentication",
+      "severity": "medium",
+      "locations": [
+        "src/config/env.ts:6"
+      ],
+      "evidence": "JWT_SECRET validation: z.string().min(8) — 8 characters is below industry best practice (32+ for HS256)",
+      "impact": "8-character secrets provide insufficient entropy (~43 bits) for HMAC-SHA256. Attackers may feasibly brute-force JWT secrets faster than intended.",
+      "remediation": "Increase minimum to 32 characters: z.string().min(32) and document the requirement",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-security",
+      "title": "Hardcoded mock user data in fallback authentication paths",
+      "category": "security",
+      "severity": "medium",
+      "locations": [
+        "src/modules/auth/auth.service.ts:106-118",
+        "src/modules/auth/auth.service.ts:152-164"
+      ],
+      "evidence": "loginWithGoogle() and me() methods return hardcoded mock user objects (id=0, code='00000000', email='mock@aloe.ulima.edu.pe') when database errors occur, allowing authentication with a known default account",
+      "impact": "A known mock user ID (0) can be targeted for privilege escalation or impersonation if authorization checks depend on user ID without proper validation",
+      "remediation": "Remove mock user fallbacks. Throw errors instead of returning default authenticated sessions.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-security",
+      "title": "No HTTPS enforcement in environment configuration",
+      "category": "security",
+      "severity": "medium",
+      "locations": [
+        "src/config/env.ts"
+      ],
+      "evidence": "No enforced HTTPS requirement or Strict-Transport-Security header configuration. Server can run over HTTP in development but no warnings about production over HTTP.",
+      "impact": "If deployed to production over HTTP, tokens and credentials are transmitted in clear text and vulnerable to man-in-the-middle attacks",
+      "remediation": "Add HSTS middleware: app.use('*', (c, next) => { if (config.server.isProduction && !c.req.url.startsWith('https')) return c.text('HTTPS required', 400); ... })",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-security",
+      "title": "Google OAuth token verification missing client ID validation",
+      "category": "security",
+      "severity": "medium",
+      "locations": [
+        "src/modules/auth/auth.service.ts:62"
+      ],
+      "evidence": "googleClient.verifyIdToken() called without audience/clientId parameter: await googleClient.verifyIdToken({ idToken: input.idToken })",
+      "impact": "ID tokens intended for other applications can be accepted, allowing cross-app token reuse attacks if attacker controls another OAuth app",
+      "remediation": "Add clientId validation: await googleClient.verifyIdToken({ idToken: input.idToken, audience: process.env.GOOGLE_CLIENT_ID })",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-deps-build",
+      "title": "Loose dependency version on @types/bun",
+      "category": "dependencies",
+      "severity": "medium",
+      "locations": [
+        "package.json:32",
+        "package-lock.json (resolved to varying versions)"
+      ],
+      "evidence": "devDependency '@types/bun' pinned to 'latest' (no version constraint). All other deps use caret (^) or fixed versions: '@types/bcryptjs': '^2.4.6', 'typescript': '^5.7.0'. 'latest' resolves to current major.minor.patch at install time, causing non-deterministic builds and potential silent breaking changes.",
+      "impact": "Non-reproducible builds across team members and CI; risk of using incompatible type definitions for Bun runtime; hidden dependency churn in git history; makes debugging environment-specific type errors harder.",
+      "remediation": "Replace 'latest' with a pinned version range: change '@types/bun': 'latest' to '@types/bun': '^1.x.x' (or specific version from package-lock.json). Run 'bun install' to update lockfile.",
+      "effort": "trivial",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-deps-build",
+      "title": "Unused production dependencies",
+      "category": "dependencies",
+      "severity": "medium",
+      "locations": [
+        "package.json:18 (@aws-sdk/client-rds-data)",
+        "package.json:23 (google-auth-library)",
+        "src/db/index.ts (uses 'postgres', not 'pg')"
+      ],
+      "evidence": "1) '@aws-sdk/client-rds-data@^3.1053.0' is in dependencies but never imported or used anywhere in src/ (grep -r found zero matches). 2) 'google-auth-library@^10.7.0' is imported in auth.service.ts line 4 but only instantiated (const googleClient = new OAuth2Client() line 9) and never called — verifyIdToken appears in file but is dead code (not in active login flow). 3) 'pg@^8.21.0' is listed as direct dependency but only used transitively via drizzle-orm; actual driver is 'postgres@^3.4.0' (used in db/index.ts).",
+      "impact": "Inflates bundle size; increases security vulnerability surface; confuses developers about actual dependencies; slows npm install; increases storage in CI caches.",
+      "remediation": "1) Remove '@aws-sdk/client-rds-data' from package.json. 2) Remove 'google-auth-library' if Google OAuth is not implemented or intended; otherwise complete and integrate the OAuth flow or remove. 3) Remove 'pg' from direct dependencies (it's already pulled in by drizzle-orm). Run 'bun install' to clean lockfile.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-deps-build",
+      "title": "Ad-hoc root-level maintenance scripts with mixed tooling",
+      "category": "build",
+      "severity": "medium",
+      "locations": [
+        "apply.cjs (547 lines)",
+        "apply2.cjs (12 lines)",
+        "check-db.js (40 lines)",
+        "test-db.cjs (18 lines)",
+        "scripts/patch-schedule-classrooms.cjs (178 lines)"
+      ],
+      "evidence": "Five one-off scripts in root and scripts/ directory, each manually patching source files or querying database: apply.cjs rewrites 6 repository/service files with find-replace regex; apply2.cjs fixes imports in auth.service.ts; check-db.js and test-db.cjs query database schema/data; patch-schedule-classrooms.cjs updates schedule_session table. No package.json scripts point to them. All use CommonJS (require/module.exports) despite project being ESM ('type': 'module'). No documentation of purpose, when to run, or dependencies.",
+      "impact": "Fragile maintenance burden; unclear state after running (idempotency unknown); blocks code review and spec-driven workflow (spec says 'no direct DB writes'); difficult to reproduce; high risk of unintended mutations; difficult to version control intent.",
+      "remediation": "1) Document purpose of each script in README or comment header. 2) Convert to TypeScript (matching project toolchain) and add to package.json scripts section if they are legitimate build/setup steps. 3) For database patches: create proper migrations in drizzle/ instead of ad-hoc scripts. 4) For file generation: consider spec-driven code generation or template-based approach. 5) Add guard comments (idempotency checks, dry-run mode).",
+      "effort": "medium",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-deps-build",
+      "title": "Missing linting, formatting, and test scripts",
+      "category": "config",
+      "severity": "medium",
+      "locations": [
+        "package.json (scripts section)",
+        "tsconfig.json (noUnusedLocals, noUnusedParameters enabled but no lint runner)"
+      ],
+      "evidence": "package.json defines only 7 scripts: dev, build, start, db:generate, db:migrate, db:push, db:studio, db:seed. Missing: lint, format, test, check-types, clean, precommit hooks. tsconfig.json enables 'noUnusedLocals': true and 'noUnusedParameters': true but no linter (eslint/biome) is in dependencies or run pre-build. No prettier or code formatter configured.",
+      "impact": "No enforced code quality standards; inconsistent formatting across files; unused variables/imports not caught; no pre-commit gate; CI cannot verify code quality; developer friction for style choices.",
+      "remediation": "1) Add linter (eslint or biome) and formatter (prettier or biome) to devDependencies. 2) Add npm scripts: 'lint': 'eslint src/', 'format': 'prettier --write src/', 'type-check': 'tsc --noEmit'. 3) Run type-check as part of 'build' script to fail on unused vars. 4) Consider husky + lint-staged for pre-commit.",
+      "effort": "medium",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-deps-build",
+      "title": "No CI/CD configuration",
+      "category": "config",
+      "severity": "medium",
+      "locations": [
+        "Repository root (no .github/workflows/)",
+        "vercel.json exists but GitHub Actions missing"
+      ],
+      "evidence": "vercel.json specifies build command ('bun run build') and install command ('bun install') for Vercel deployment. However, no .github/workflows/ directory or GitHub Actions config files present. No pre-merge checks: lint, type-check, test, security scan.",
+      "impact": "No automated quality gates before merge; broken builds can be committed to main; security issues not scanned; inconsistent local vs. CI behavior; no deploy artifacts verification; manual release process.",
+      "remediation": "Create .github/workflows/ci.yml with: lint step (eslint), type-check (tsc --noEmit), build (tsc), and test (if tests added). Example: run on PR and push to main. Add build status badge to README.",
+      "effort": "medium",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-deps-build",
+      "title": "Incorrect bcrypt import (dynamic import in async context without top-level import)",
+      "category": "error-handling",
+      "severity": "medium",
+      "locations": [
+        "src/modules/auth/auth.service.ts:24-25"
+      ],
+      "evidence": "auth.service.ts imports bcryptjs at line 4 but the import is commented out (see apply2.cjs rewrites file header). Line 24 then does: 'const bcrypt = await import(\"bcryptjs\");' which is a dynamic import inside the async login() method. This works but is redundant and inconsistent with the declared dependency. Header comments say 'we will need to make sure bcrypt is imported at the top of the file' but never do it.",
+      "impact": "Slight performance overhead (dynamic import resolved on each login); inconsistent style; confusing to maintainers; masks the actual top-level import that should be there.",
+      "remediation": "Add proper top-level import at the top of auth.service.ts: 'import bcrypt from \"bcryptjs\";'. Remove the dynamic import on line 24 and use bcrypt directly. Remove the TODO comment.",
+      "effort": "trivial",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-testing",
+      "title": "Unhandled promise rejections in event bus",
+      "category": "error-handling",
+      "severity": "medium",
+      "locations": [
+        "src/events/event-bus.ts:27"
+      ],
+      "evidence": "await Promise.all([...handlers].map((handler) => handler(payload))); — If any async handler rejects, the error is logged but not caught or re-thrown. Line 27 has no try-catch wrapper. Handlers are typed as (payload: unknown) => void | Promise<void> with no error handling contract.",
+      "impact": "Silent failures in event processing. If observer handlers fail (e.g., academic-risk observer), the errors are swallowed. Application state becomes inconsistent without indication. Database side effects may be partially applied.",
+      "remediation": "Wrap Promise.all in try-catch. Log rejected handlers with context. Either re-throw critical failures or implement dead-letter queue for failed events.",
+      "effort": "small",
+      "verifyNotes": "The issue is GENUINE: Line 27 of src/events/event-bus.ts has Promise.all([...handlers].map(...)) with no try-catch, so rejected handler promises will cause unhandled rejections in the publish() method. Handlers have no error contract. HOWEVER, current severity should be MEDIUM (not high) because: (1) The EventBus is infrastructure code not yet actively used - no publish/subscribe calls exist in the codebase, (2) Observer implementations are stubs/empty, (3) It's a latent defect awaiting future feature implementation. Once observers are integrated, this becomes a HIGH-severity issue causing silent failures and inconsistent state. The code is correctly identified as problematic, but the impact assessment is premature since the feature isn't live.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-testing",
+      "title": "Uncaught async errors in route handlers",
+      "category": "error-handling",
+      "severity": "medium",
+      "locations": [
+        "src/modules/auth/auth.routes.ts:11-14",
+        "src/modules/grades/grades.routes.ts:9-117"
+      ],
+      "evidence": "Route handlers are async functions without try-catch: app.post('/login', async (c) => { const body = await validateJson(c, loginSchema); return c.json(await controller.login(body)); }); — If validateJson or controller.login throw, error propagates to Hono's global error handler. Some routes like /grades/me/courses wrap in try-catch, others don't, inconsistently.",
+      "impact": "Inconsistent error handling. Some errors caught in routes, others bubble up. Error handler receives mixed error types (HttpError vs native Error). Response format varies between caught/uncaught errors.",
+      "remediation": "Standardize: wrap all async route handlers in try-catch, or rely on Hono's error handler consistently. Document error handling contract for all routes.",
+      "effort": "small",
+      "verifyNotes": "CONFIRMED: The claim accurately describes an inconsistent error handling pattern. Auth routes (auth.routes.ts lines 11-14 and 16-19) are async without try-catch, allowing HttpError exceptions from validateJson and controller methods to propagate. However, they ARE caught by Hono's global error handler (registered in server.ts line 15 via app.onError(errorHandler)), which properly formats HttpError responses. The real issue is INCONSISTENCY: Routes like /grades/me/courses, /representatives, and course-detail endpoints wrap in try-catch and silently return empty data on any error (losing error info), while auth routes let errors propagate with proper error details. The severity should be MEDIUM, not HIGH, because: (1) errors are not truly uncaught—the global handler works correctly, (2) the inconsistency creates a worse UX when errors are silently swallowed vs. properly reported, (3) validateJson.ts properly throws HttpError (not raw Error), so type consistency is maintained. The real tech debt is: standardize error handling—either wrap all routes in try-catch with proper error responses, or remove try-catch from data-fetch routes to let the global handler provide consistent error responses.\"",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-testing",
+      "title": "Hard-coded fallback values hiding configuration issues",
+      "category": "configuration",
+      "severity": "medium",
+      "locations": [
+        "src/modules/auth/auth.repository.ts:204",
+        "src/modules/course-detail/course-detail.routes.ts:249"
+      ],
+      "evidence": "Hard-coded 'currentCycle: \"2026-1\"' returned in user responses (auth.repository.ts line 204). This cycle is hard-coded in multiple route responses (course-detail.routes.ts line 249). If academic period changes, code must be updated. No dynamic lookup from academic_period table.",
+      "impact": "Users always see 2026-1 as current cycle regardless of system state. Outdated when next cycle starts. Inconsistent if database has different active period.",
+      "remediation": "Query current academic_period from database with is_active=true. Cache with TTL or load on demand. Add validation that active period exists.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-testing",
+      "title": "No request/response logging for debugging",
+      "category": "observability",
+      "severity": "medium",
+      "locations": [
+        "src/server.ts",
+        "src/shared/middleware/error-handler.ts"
+      ],
+      "evidence": "Hono logger() middleware registered globally (server.ts line 14) but no request context logging (user ID, request body size, response time, query count). Console.error statements are ad-hoc with inconsistent format. Error handler logs 'Unhandled error' with just the error object (line 18).",
+      "impact": "Cannot trace requests end-to-end. Performance issues undetectable. Database query problems hard to diagnose. Compliance/audit trail missing.",
+      "remediation": "Add structured request logger middleware: log userId, endpoint, method, response status, elapsed time. Log database query count per request. Use consistent JSON format.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-testing",
+      "title": "Promise.all in event bus will fail on first error",
+      "category": "error-handling",
+      "severity": "medium",
+      "locations": [
+        "src/events/event-bus.ts:27"
+      ],
+      "evidence": "await Promise.all([...handlers].map((handler) => handler(payload))); — Promise.all rejects if any handler rejects. No Promise.allSettled or error aggregation. Handlers are unordered Set, so order of failure is non-deterministic.",
+      "impact": "Single failing observer blocks all subsequent observers. Partial event processing. No way to identify which handler(s) failed.",
+      "remediation": "Use Promise.allSettled instead. Log rejected handlers separately. Implement retry logic or dead-letter queue for failed observers.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-testing",
+      "title": "Empty event observers - no business logic implemented",
+      "category": "architecture",
+      "severity": "medium",
+      "locations": [
+        "src/events/index.ts:1-3",
+        "src/events/observers/academic-risk.observer.ts",
+        "src/events/observers/announcement.observer.ts",
+        "src/events/observers/section-average.observer.ts"
+      ],
+      "evidence": "registerEventObservers() in index.ts is empty. academic-risk.observer.ts contains only: export const registerAcademicRiskObserver = (bus: EventBus) => { void bus; }; — Similar empty stubs for announcement and section-average observers.",
+      "impact": "Event system infrastructure exists but no business logic hooked up. Academic risk alerts, announcements, section averages are not computed/triggered. Users won't receive alerts as designed.",
+      "remediation": "Implement observers per AGENTS.md requirements: academic-risk (promedio < 10.5), high_load (3+ evaluations/week), announcement propagation, section average calculation.",
+      "effort": "large",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-testing",
+      "title": "No typed error responses - inconsistent error format",
+      "category": "api-contract",
+      "severity": "medium",
+      "locations": [
+        "src/shared/errors/http-error.ts",
+        "src/shared/middleware/error-handler.ts:6-15"
+      ],
+      "evidence": "Error response is ad-hoc JSON: { error: { code, message, details } }. HttpError constructor accepts statusCode and optional details, but details is untyped (details?: unknown). Some routes return empty arrays on error (grades.routes.ts line 115), others return error JSON. No consistent error schema.",
+      "impact": "Frontend must handle multiple error formats. Unpredictable 'details' field structure. Breaks typed API contracts.",
+      "remediation": "Define error response type with strict schema. All errors return same format: { error: { code: string, message: string, statusCode: number } }. Type 'details' field or remove it.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-testing",
+      "title": "Type casting errors in database results",
+      "category": "type-safety",
+      "severity": "medium",
+      "locations": [
+        "src/modules/auth/auth.repository.ts:84",
+        "src/modules/schedule/schedule.repository.ts:75",
+        "src/modules/course-detail/course-detail.routes.ts:39"
+      ],
+      "evidence": "Database queries cast to 'unknown as Array<...>' which bypasses TypeScript. Example: `) as unknown as RawSessionRow[];` — if database returns different column names or types, type system doesn't catch it. No runtime validation of result shape.",
+      "impact": "Type errors only discovered at runtime when accessing wrong properties. Crashes on null/undefined fields. Silent data corruption if column order changes.",
+      "remediation": "Use Zod for result validation: const result = SessionRowSchema.array().parse(raw); Validate before returning to service layer.",
+      "effort": "medium",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-testing",
+      "title": "No health check endpoint for dependencies",
+      "category": "reliability",
+      "severity": "medium",
+      "locations": [
+        "src/server.ts:36-38"
+      ],
+      "evidence": "/health endpoint returns { status: 'ok', timestamp } but doesn't test database connectivity. Just returns hardcoded 'ok' response. No checks for: database connection pool, required environment variables, external services (Google OAuth).",
+      "impact": "Load balancer can't detect if database is down. Graceful shutdown impossible. Unhealthy instances serve 200 responses.",
+      "remediation": "Expand /health to check: db connection (SELECT 1), required config vars, response time. Return 503 if any dependency is down.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-testing",
+      "title": "Inconsistent error handling in service layer",
+      "category": "error-handling",
+      "severity": "medium",
+      "locations": [
+        "src/modules/auth/auth.service.ts:53-57",
+        "src/modules/academic-profile/academic-profile.service.ts:81-86"
+      ],
+      "evidence": "auth.service.ts login() catches non-HttpError and throws new HttpError(500). me() catches and returns mock user. academic-profile.service.ts updateSpecialties() catches unique violations and checks error.code === '23505' (PostgreSQL constraint error code), not standardized.",
+      "impact": "Different error handling logic per service. Hard to maintain. Database-specific error codes leak into business logic.",
+      "remediation": "Create error wrapper/mapper in repository layer. Repository translates DB errors to AppError subclasses. Services only handle domain errors.",
+      "effort": "medium",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-architecture",
+      "title": "God file: setup_carrera_page.dart at 818 lines",
+      "category": "architecture",
+      "severity": "medium",
+      "locations": [
+        "lib/pages/setup_carrera/setup_carrera_page.dart"
+      ],
+      "evidence": "818-line setup wizard containing 10 nested widget classes including _EspecialidadCard as StatefulWidget (457-593) with local state (_expanded) managing card expansion. Three multi-step pages (_CarreraStep, _DecisionStep, _SeleccionStep) each with complex layouts. _ActionChip and _EspecialidadCard handle UI state independently of controller.",
+      "impact": "Difficult to navigate wizard logic. Card expansion state (_expanded) lives in widget, not controller. Step transitions depend on GetxController but local UI state is scattered across nested widgets.",
+      "remediation": "Extract _SeleccionStep into separate file. Move card expansion state to SetupCarreraController as expandedCards RxMap<int, bool>. Create reusable `specialty_action_chip.dart` and `specialty_card.dart`.",
+      "effort": "medium",
+      "verifyNotes": "VERIFIED: The file is genuinely 818 lines with 11 nested widget classes (some StatelessWidget, one StatefulWidget). The claim about scattered state management is PARTIALLY ACCURATE but OVERSTATED. FINDINGS: (1) Line count: CORRECT - file is exactly 818 lines. (2) Nested classes: CORRECT - 11 private widget classes exist (_WizardHeader, _CarreraStep, _DecisionStep, _DecisionCard, _SeleccionStep, _EspecialidadCard, _EspecialidadCardState, _ActionChip, _SectionLabel, _ErrorBanner, _BottomButton). (3) _EspecialidadCard StatefulWidget claim: CORRECT - it is a StatefulWidget (lines 437-593). (4) _expanded state claim: CORRECT - local state bool _expanded exists in _EspecialidadCardState (line 459) managing only card expansion visibility. (5) Three multi-step pages claim: CORRECT - _CarreraStep (100-215), _DecisionStep (219-269), _SeleccionStep (365-435). HOWEVER - SEVERITY DOWNGRADE TO MEDIUM: Business logic IS properly separated in controller (selectedPrincipal, selectedInteres, decision, step all managed by SetupCarreraController). The _expanded state is UI-only (animation state), not business state - this is correct separation. Most nested widgets are StatelessWidget, not StatefulWidget. The only StatefulWidget is _EspecialidadCard with purely UI state for expansion. The claim exaggerates the architectural problem: step transitions DO depend on GetxController correctly, and scatter of local UI state (expansion animation) vs business state (selections) is actually a sensible pattern - not a sign of poor architecture. FILE COMPLEXITY IS MODERATE (818 lines). It would benefit from extraction (e.g., move specialty-selection UI to separate file), but this is code organization improvement, not a critical architectural flaw.\"",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-architecture",
+      "title": "God file: login_page.dart at 418 lines",
+      "category": "architecture",
+      "severity": "medium",
+      "locations": [
+        "lib/pages/login/login_page.dart"
+      ],
+      "evidence": "418-line login page containing 7 nested widget classes including _UnderlineField (59 lines, reusable), _ErrorMessage, _EntrarButton, _GoogleButton, _LoginPalette as data class (78 lines with factory constructor and 17 properties). All styling logic concentrated in _LoginPalette but scattered across multiple classes.",
+      "impact": "Hard to extract reusable text field component. Palette logic tightly coupled to page file. Any color scheme change requires modifying the page.",
+      "remediation": "Extract _UnderlineField to `lib/components/fields/underline_text_field.dart`. Move _LoginPalette to `lib/configs/login_theme.dart`. Create generic button components in `lib/components/buttons/`.",
+      "effort": "small",
+      "verifyNotes": "Confirmed: 418-line file with 7 nested classes (_LoginCard, _UnderlineField 61 lines, _ErrorMessage, _EntrarButton, _GoogleButton, _LoginPalette 80 lines with 16 properties, _LogoTextColorMapper). _UnderlineField is well-parameterized but private/unreusable. _LoginPalette is used by all 6 widget classes, creating tight coupling. However, severity should be 'medium' not 'high' - this is a cohesive login page with reasonable organization. Real debt: (1) preventing component reuse via private scope, (2) no shared text field library across app. For a single-purpose auth page, this structure is acceptable; would only be high-severity if these components need to be shared app-wide.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-architecture",
+      "title": "Business logic tightly coupled to UI widgets",
+      "category": "architecture",
+      "severity": "medium",
+      "locations": [
+        "lib/pages/malla/malla_page.dart:671-687",
+        "lib/pages/perfil/perfil.dart:392-407",
+        "lib/pages/horario/horario.dart:14-32",
+        "lib/pages/calculadora/calculadora_page.dart:35-50"
+      ],
+      "evidence": "malla_page.dart _openDetails() (lines 671-687) contains prerequisite checking and status computation logic. perfil.dart _PrincipalChip._pendingCount() (lines 392-407) computes pending specialty courses inline. horario.dart _timeToHours() (lines 14-32) contains business logic for time parsing. CalculadoraPage contains inline filtering logic (lines 35-50, 56-61) for courses with notes.",
+      "impact": "Business logic not testable without rendering widgets. UI and domain logic intertwined. Changes to business rules require modifying page files.",
+      "remediation": "Extract all business logic methods to controllers: move _pendingCount to ProfileController, move _timeToHours to HorarioController, create PrerequisiteCalculator service for malla_page logic. Make controllers compute all data; pages become pure UI only.",
+      "effort": "medium",
+      "verifyNotes": "Claim is partially valid but overstated. malla_page.dart _openDetails() is purely a UI presenter calling pre-computed statuses from the service layer - not actual business logic. perfil.dart's _pendingCount() does contain business logic (status filtering) in a widget, which is a valid concern. horario.dart's _timeToHours() is a simple utility function used only within that widget, not truly \"business logic\". calculadora_page.dart has minor inline filtering duplication that could be extracted to the controller. The codebase already has good separation of concerns via services (MallaService, AuthService, etc.). The coupling issue exists but is limited in scope and less severe than claimed - should be 'medium' not 'high'.\"",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-architecture",
+      "title": "No clear separation between page and controller responsibilities",
+      "category": "architecture",
+      "severity": "medium",
+      "locations": [
+        "lib/pages/home/home_page.dart",
+        "lib/pages/horario/horario_controller.dart",
+        "lib/pages/calculadora/calculadora_controller.dart"
+      ],
+      "evidence": "HomePage has HomeController but it's empty (3 lines). HorarioPage uses HorarioController but makes API calls directly in controller (lines 32-34 for /schedule/me/sessions). CalculadoraPage uses CalculadoraController but the page also directly reads controller.cursos and filters inline (lines 56-61 repeats filter logic twice).",
+      "impact": "Empty/incomplete controllers suggest pattern not followed. Hard to understand what business logic belongs where.",
+      "remediation": "Implement HomeController with selectedTabIndex.obs property. Move API calls from controllers to dedicated services (ScheduleService, GradesService). Add computed properties to controllers (e.g., currentDayCourses as Rx<List>) so pages only observe, not compute.",
+      "effort": "medium",
+      "verifyNotes": "Confirmed: (1) HomeController is truly empty (3 lines, no logic). (2) HorarioController makes API calls directly (lines 32-34 in _loadDays, lines 57-59 in _loadSecciones via _api.getJson). (3) CalculadoraPage filters courses inline at lines 36-41 and duplicates the exact same filter at lines 57-61 (.where((curso) => (curso['notas'] as List?)?.isNotEmpty ?? false)). This violates MVC separation—the page should not implement its own business logic filtering. The API calls in the controller are acceptable in GetX patterns (controllers orchestrate services), so the core issue is the empty HomeController and page-layer filtering in CalculadoraPage. Severity downgraded from high to medium because the violations exist but don't block functionality; the main concern is maintainability and confusion about where logic belongs, not architectural breakdown.\"",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-architecture",
+      "title": "Duplicate service patterns: singleton vs GetxService vs factory patterns",
+      "category": "architecture",
+      "severity": "medium",
+      "locations": [
+        "lib/services/courses_service.dart",
+        "lib/services/notas_service.dart",
+        "lib/services/evaluations_service.dart",
+        "lib/services/auth_service.dart",
+        "lib/services/malla_service.dart"
+      ],
+      "evidence": "CoursesService uses static _instance + factory() pattern (lines 6-12). NotasService uses same pattern (lines 5-11). EvaluationSyllabusService uses same pattern (lines 7-13). But AuthService extends GetxService and uses Get.put() in main.dart. MallaService extends GetxService with Get.put().",
+      "impact": "Inconsistent lifecycle management. Confusion about which pattern to use for new services. Some services may instantiate multiple times if not properly accessed.",
+      "remediation": "Standardize all services to extend GetxService. Remove static _instance factories. Initialize all in main.dart with Get.put(). Create BaseService class if common logic needed.",
+      "effort": "small",
+      "verifyNotes": "Verified: Codebase uses two conflicting singleton patterns. CoursesService, NotasService, and EvaluationSyllabusService use static _instance + factory() pattern. AuthService, MallaService, and StorageService extend GetxService with Get.put()/Get.putAsync(). Additionally, AnuncioService and UserService use plain instantiation. The factory pattern correctly prevents multiple instances, but the architectural inconsistency creates confusion. Severity corrected to MEDIUM: functional correctness is maintained, but developer confusion about pattern choice for new services is a real risk, not a critical bug.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-architecture",
+      "title": "No dedicated page/controller per route",
+      "category": "architecture",
+      "severity": "medium",
+      "locations": [
+        "lib/main.dart",
+        "lib/pages/home/home_page.dart"
+      ],
+      "evidence": "main.dart defines only 3 routes (/login, /setup-carrera, /home) all hardcoded in getPages. HomePage renders 5 different pages (malla, calculadora, horario, delegate, profile) in a tab-based layout but GetPages routing doesn't expose these as separate routes. Deep linking to individual tabs impossible.",
+      "impact": "Navigation between tabs goes through tab index state, not routing. Can't bookmark or deep-link to specific feature. Difficult to add bottom sheet or modal flows without blocking entire navigation.",
+      "remediation": "Add nested routes: /home/malla, /home/calculadora, /home/horario, /home/perfil. Implement GetPages with child routes. Use Get.toNamed() for internal navigation instead of setState tab switching.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-architecture",
+      "title": "Unmanaged TextEditingController lifecycles",
+      "category": "state-management",
+      "severity": "medium",
+      "locations": [
+        "lib/pages/login/login_controller.dart",
+        "lib/pages/calculadora/calculadora_page.dart"
+      ],
+      "evidence": "LoginController creates TextEditingControllers (lines 9-10) and disposes them in onClose() (lines 60-62), which is correct. But CalculadoraPage and other forms don't show TextEditingController management in visible code. No @override onClose() visible in CalculadoraController.",
+      "impact": "Memory leaks if controllers don't properly dispose TextEditingControllers. Inconsistent pattern suggests some controllers may leak.",
+      "remediation": "Add explicit @override onClose() with controller.dispose() to all controllers managing TextEditingControllers. Add lint rule to catch undisposed controllers.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-architecture",
+      "title": "Redundant API calls and no caching strategy",
+      "category": "architecture",
+      "severity": "medium",
+      "locations": [
+        "lib/pages/horario/horario_controller.dart",
+        "lib/pages/calculadora/calculadora_controller.dart",
+        "lib/services/malla_service.dart"
+      ],
+      "evidence": "HorarioController calls _loadDays() and _loadSecciones() both hitting the same endpoint (/schedule/me/sessions) separately (lines 29-51). CalculadoraController calls _cargarDatosSyllabus() and _inicializarCursos() in onInit without checking if already loaded. MallaService has idempotent load() (lines 42-44) but other services don't.",
+      "impact": "Unnecessary network requests on controller reinit. Bandwidth waste. Slow app startup and page transitions.",
+      "remediation": "Move duplicate API calls to single ScheduleService.loadSchedule() returning both days and sections. Add _isLoaded flag to all services. Use Get.lazyPut with fenix:false to prevent re-instantiation.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-architecture",
+      "title": "Magic strings and hardcoded values scattered across codebase",
+      "category": "configuration",
+      "severity": "medium",
+      "locations": [
+        "lib/pages/horario/horario_controller.dart",
+        "lib/services/malla_service.dart",
+        "lib/pages/calculadora/calculadora_controller.dart"
+      ],
+      "evidence": "HorarioController hardcodes default start hour (7.0, line 10) and tries to find 'Viernes' by name (line 47). MallaService contains specialty aliases map (lines 17-27) but no other map for semester naming or course IDs. CalculadoraController hardcodes 'default' student ID (line 49). API endpoints scattered as string literals.",
+      "impact": "Hard to maintain when business rules change (e.g., semester names, default hours). Impossible to internationalize. No single source of truth for constants.",
+      "remediation": "Create `lib/constants/app_constants.dart` with all magic strings. Create `lib/constants/api_endpoints.dart` for all API paths. Move specialty map to `lib/constants/specialties.dart`. Replace string literals with named constants.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-architecture",
+      "title": "Incomplete null safety and unsafe type casting",
+      "category": "error-handling",
+      "severity": "medium",
+      "locations": [
+        "lib/pages/horario/horario_controller.dart",
+        "lib/pages/calculadora/calculadora_page.dart",
+        "lib/pages/malla/malla_page.dart"
+      ],
+      "evidence": "HorarioController assumes List<dynamic> and casts without null checks (line 60). CalculadoraPage casts 'notas' as List without validation (line 103). MallaPage casts response['user'] without null guard before UserModel.fromJson (line 51).",
+      "impact": "Runtime crashes on unexpected API responses or missing fields. No clear error boundaries.",
+      "remediation": "Add strict null checks and proper type casting with guards. Use extension methods for safe casting. Add data validation layer in models.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-architecture",
+      "title": "No error handling layer or user-facing error messages in business logic",
+      "category": "error-handling",
+      "severity": "medium",
+      "locations": [
+        "lib/pages/calculadora/calculadora_controller.dart",
+        "lib/pages/descripcion_cursos/descrip_cursos_controller.dart",
+        "lib/pages/horario/horario_controller.dart"
+      ],
+      "evidence": "CalculadoraController catches exceptions and only logs them (lines 31-39, 42-96, 143-148). DescripCursosController logs 'Error cargando datos del curso' but doesn't propagate to UI (line 49). HorarioController catches errors but silently continues (lines 49-51). No RxString errorMessage or snackbar feedback.",
+      "impact": "Users don't know if operations failed or why. Silent failures. Difficult to debug production issues.",
+      "remediation": "Add errorMessage.obs property to all controllers. Set meaningful error messages on catch. Show snackbars or dialogs via Get.snackbar(). Create centralized ErrorHandler service.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-architecture",
+      "title": "No clear distinction between View Models and Pages",
+      "category": "architecture",
+      "severity": "medium",
+      "locations": [
+        "lib/pages/malla/malla_page.dart",
+        "lib/pages/perfil/perfil.dart",
+        "lib/pages/login/login_page.dart"
+      ],
+      "evidence": "MallaPage is StatelessWidget but contains 15+ nested classes doing presentation logic. MallaController handles state but page still contains _MallaCanvasState with lifecycle logic. No clear MVVM separation.",
+      "impact": "Hard to understand where to put new UI logic. Controllers feel like data bags, not view models.",
+      "remediation": "Move all coordinate/positioning logic from MallaCanvas to MallaController as computed properties. Make page a pure presentation layer. Controllers should expose reactive properties for pages to observe.",
+      "effort": "medium",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-architecture",
+      "title": "No clear API contract or repository pattern between controllers and services",
+      "category": "architecture",
+      "severity": "medium",
+      "locations": [
+        "lib/services/",
+        "lib/pages/"
+      ],
+      "evidence": "Services return raw Map<String, dynamic> from API. Controllers parse and transform inline. No data transfer objects (DTOs) between API and domain layer. Each controller does its own API response parsing.",
+      "impact": "Tight coupling between API contract and business logic. If API response structure changes, must update all controllers that use it.",
+      "remediation": "Create repository layer: GradesRepository, ScheduleRepository, etc. Create DTOs/models to parse API responses. Controllers call repositories, not services directly.",
+      "effort": "medium",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-quality",
+      "title": "Excessive debug print statements left in production code",
+      "category": "dead-code",
+      "severity": "medium",
+      "locations": [
+        "lib/components/header/app_header.dart:37",
+        "lib/components/calculadora/nota_tile.dart:81",
+        "lib/models/curso_model.dart:33",
+        "lib/services/courses_service.dart:32",
+        "lib/services/courses_service.dart:34",
+        "lib/pages/calculadora/calculadora_controller.dart:36",
+        "lib/pages/calculadora/calculadora_controller.dart:38",
+        "lib/pages/calculadora/calculadora_controller.dart:91",
+        "lib/pages/calculadora/calculadora_controller.dart:95",
+        "lib/pages/calculadora/calculadora_controller.dart:147",
+        "lib/services/evaluations_service.dart:43",
+        "lib/services/evaluations_service.dart:45",
+        "lib/services/notas_service.dart:33",
+        "lib/services/notas_service.dart:35",
+        "lib/services/notas_service.dart:45",
+        "lib/services/notas_service.dart:52",
+        "lib/services/notas_service.dart:61",
+        "lib/services/notas_service.dart:63",
+        "lib/services/notas_service.dart:72",
+        "lib/services/notas_service.dart:82"
+      ],
+      "evidence": "20+ instances of print() calls across services and pages: print('✓ Datos de cursos cargados'), print('✗ Error al cargar...'), print('✅ ÉXITO: Se eliminó la nota')",
+      "impact": "Debug output pollutes console logs in production, violates Flutter best practice (avoid_print lint available), makes debugging harder, impacts performance during file I/O operations",
+      "remediation": "Replace print() calls with debugPrint() from 'package:flutter/foundation.dart' for debug builds, or remove entirely and use proper logging framework (e.g., logger package)",
+      "effort": "small",
+      "verifyNotes": "Verified 20 actual print() statements across 7 files exactly as cited. All evidence examples match real code. However, severity should be MEDIUM not HIGH because: (1) avoid_print lint is explicitly disabled in analysis_options.yaml, so this is not a linting violation; (2) while the prints do pollute console logs, they're limited in scope (not excessive across entire codebase); (3) performance impact during file I/O is minimal for SharedPreferences operations shown; (4) the statements use decorative emojis suggesting intentional debug output rather than accidental leftover. The issue is valid but represents a code quality/cleanliness concern rather than a critical problem.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-quality",
+      "title": "Missing const constructors on StatelessWidget and StatefulWidget classes",
+      "category": "architecture",
+      "severity": "medium",
+      "locations": [
+        "lib/pages/descripcion_cursos/anuncios_tab.dart:11",
+        "lib/components/calculadora/curso_card.dart:26",
+        "lib/pages/perfil/perfil.dart:47"
+      ],
+      "evidence": "AnunciosTab constructor is not const despite being StatelessWidget; AppFooter constructor is const but subclasses with no override are missing const; CursoCard has hardcoded EdgeInsets without const",
+      "impact": "Prevents const constructors from being used in parent widgets; defeats Flutter rebuild optimization; wastes memory allocations; violates lint rule prefer_const_constructors",
+      "remediation": "Mark all StatelessWidget/StatefulWidget constructors as const; make all parameters final and required where applicable; avoid late var initialization in constructor body",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-quality",
+      "title": "Inconsistent and mixed Spanish/English naming conventions",
+      "category": "architecture",
+      "severity": "medium",
+      "locations": [
+        "lib/components/descripcion_cursos/",
+        "lib/models/",
+        "lib/services/",
+        "lib/pages/"
+      ],
+      "evidence": "Mix of Spanish class names (Anuncio, Asesoria, Docente, Contacto, DescripCursos, SetupCarrera) and English (CourseNode, CourseStatus, CourseProgress, UserModel, EvaluationComponent); field names mix both (idSeccion vs courseId, docenteCode vs docenteCode)",
+      "impact": "Reduced code readability; inconsistent API; harder for new developers; makes refactoring and search/replace operations error-prone; violates Dart naming conventions",
+      "remediation": "Choose single language (recommend English for long-term maintainability); establish naming conventions in CONTRIBUTING guidelines; gradually migrate Spanish names to English in future PRs",
+      "effort": "large",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-quality",
+      "title": "Extremely large and complex build() methods with deep widget nesting",
+      "category": "architecture",
+      "severity": "medium",
+      "locations": [
+        "lib/pages/malla/malla_page.dart:344-485",
+        "lib/pages/horario/horario.dart:35-260",
+        "lib/pages/setup_carrera/setup_carrera_page.dart:105-400",
+        "lib/pages/descripcion_cursos/descrip_cursos.dart:25-250"
+      ],
+      "evidence": "malla_page.dart _MallaCanvasState.build() is 140+ lines with 8+ levels of nesting (Obx > LayoutBuilder > InteractiveViewer > SizedBox > Stack > Positioned > [multiple child lists]); horario.dart build() is 220+ lines with repeated similar widgets in loops",
+      "impact": "Impossible to test individual UI components; slow hot reload; difficult to debug; violates single responsibility principle; high cognitive complexity; poor maintainability",
+      "remediation": "Extract each visual section into named StatelessWidget classes (_CourseCard, _TimeSlot, _Header); use helper methods to build repeated patterns; limit build() to < 50 lines",
+      "effort": "medium",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-quality",
+      "title": "Magic numbers and hardcoded dimensions scattered throughout UI code",
+      "category": "duplication",
+      "severity": "medium",
+      "locations": [
+        "lib/pages/horario/horario.dart:10-12",
+        "lib/pages/horario/horario.dart:128",
+        "lib/pages/calculadora/calculadora_page.dart:22-138",
+        "lib/pages/setup_carrera/setup_carrera_page.dart:130-180",
+        "lib/pages/descripcion_cursos/descrip_cursos.dart:180-210",
+        "lib/components/calculadora/curso_card.dart:26-35"
+      ],
+      "evidence": "startHour = 7.0, endHour = 22.0, hourHeight = 85.0 as static const (good); but also EdgeInsets.all(20), EdgeInsets.all(24), EdgeInsets.fromLTRB(16,4,16,16), width: 120, height: 120, width: 90, height: 90 - repeated throughout; borderRadius.circular(25), circular(30), circular(15) inconsistently used",
+      "impact": "Inconsistent spacing across UI; impossible to maintain consistent design system; requires searching multiple files to adjust spacing; violates DRY principle",
+      "remediation": "Create constants file (lib/configs/dimensions.dart) with spacing scales (xs: 4, sm: 8, md: 16, lg: 24, xl: 32); define standard border radii; use consistently across all pages",
+      "effort": "medium",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-quality",
+      "title": "Boilerplate code duplication in service classes",
+      "category": "duplication",
+      "severity": "medium",
+      "locations": [
+        "lib/services/anuncio_service.dart",
+        "lib/services/asesoria_service.dart",
+        "lib/services/contacto_service.dart"
+      ],
+      "evidence": "All three service files follow identical pattern: create ApiClient, implement async fetch method, try-catch with debugPrint error logging, return empty list/map on error. AnuncioService and AsesoriaService have nearly identical fromJson parsing logic with different data extraction keys",
+      "impact": "Maintenance burden; bug fixes must be replicated in multiple files; new services require copy-paste; code bloat",
+      "remediation": "Create generic CrudService<T> base class or mixin with common error handling; use generic fromJson factory pattern; extract API endpoint paths to constants",
+      "effort": "medium",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-quality",
+      "title": "Dead/commented-out code left in production files",
+      "category": "dead-code",
+      "severity": "medium",
+      "locations": [
+        "lib/components/header/app_header.dart:40",
+        "lib/components/header/app_header.dart:74-81",
+        "lib/models/malla_models.dart:160",
+        "lib/components/calculadora/curso_card.dart:56-57",
+        "lib/components/calculadora/add_score.dart:32",
+        "lib/pages/home/home_page.dart:28-35"
+      ],
+      "evidence": "//Get.to(() => const AlertasPage()); commented navigation; multi-line SVG logo block comment; //final Set<String> currentCourses; commented field; debug comment 'Cambia tu Text temporalmente por esto para ver qué hay'; commented TODO in _cargarDatosSyllabus()",
+      "impact": "Confuses developers; creates false sense of unfinished work; adds cognitive load; makes git blame less useful; violates code cleanliness",
+      "remediation": "Remove all commented-out code; use git history to recover if needed; use TODO/FIXME comments only for actual in-progress work with task refs",
+      "effort": "trivial",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-quality",
+      "title": "Weak error handling with generic catch-all exception handlers",
+      "category": "error-handling",
+      "severity": "medium",
+      "locations": [
+        "lib/services/anuncio_service.dart:21",
+        "lib/services/asesoria_service.dart:21",
+        "lib/services/contacto_service.dart:44",
+        "lib/pages/horario/horario.dart:29",
+        "lib/pages/calculadora/calculadora_controller.dart:94-95"
+      ],
+      "evidence": "catch (e) with only debugPrint('Error...'); return empty list/map; generic Exception handler in _timeToHours catches all with return 7.0 default; no specific exception types caught; no rethrow or error propagation",
+      "impact": "Silent failures; impossible to distinguish between API errors, network errors, and parsing errors; hides bugs; poor user feedback",
+      "remediation": "Distinguish exception types (SocketException, TimeoutException, FormatException); provide specific error messages; consider custom exception classes; log errors with full stack traces in debug mode",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-security",
+      "title": "Hardcoded test credentials in source data files",
+      "category": "security",
+      "severity": "medium",
+      "locations": [
+        "assets/data/users.json"
+      ],
+      "evidence": "User credentials stored in plain text: code '20235218' with password 'ulima123', code '20232548' with password 'ulima123' and other test user entries with plaintext passwords.",
+      "impact": "Student login credentials are committed to version control and distributed with the app binary. This allows any user with access to the app assets to obtain valid authentication credentials for any hardcoded test user account.",
+      "remediation": "Remove all hardcoded user credentials from assets/data/users.json. If test data is needed, either (1) exclude this file from version control via .gitignore, (2) populate test data at runtime from a secure test API backend, or (3) use separate test fixtures that are not included in production builds.",
+      "effort": "small",
+      "verifyNotes": "The issue is REAL but severity was OVERSTATED. Hardcoded test credentials do exist in assets/data/users.json with plaintext passwords (9 accounts, all password 'ulima123'). However, these JSON files are NOT registered in pubspec.yaml assets, so they are NOT included in compiled app binaries and NOT accessible to app users. The credentials are stored in source code/repository which is the actual risk. No code in the app loads or uses this file for authentication - all auth goes through a backend API. The severity is MEDIUM (not CRITICAL) because: (1) files aren't in app distribution, (2) authentication is backend-based, but (3) real student credentials appear exposed in source repository which needs to be addressed if repo is shared or public.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-security",
+      "title": "Insecure HTTP fallback for API endpoints on web and localhost",
+      "category": "security",
+      "severity": "medium",
+      "locations": [
+        "lib/services/api_client.dart:30-34"
+      ],
+      "evidence": "api_client.dart uses HTTP protocol by default: 'http://localhost:3000' for web, 'http://10.0.2.2:3000' for Android emulator, and 'http://localhost:3000' for iOS. The baseUrl property constructs URIs without enforcing HTTPS.",
+      "impact": "Tokens, passwords, and user data are transmitted in cleartext over HTTP in dev/test builds. Man-in-the-middle attacks can intercept authentication tokens and session credentials. This is acceptable only for truly local development but is dangerous if these defaults are used against remote backends.",
+      "remediation": "Enforce HTTPS in production builds. For development: (1) Use API_BASE_URL build environment variable to override baseUrl with secure backend URL, (2) Add certificate pinning or HttpClient configuration to validate HTTPS, (3) Add compile-time assertions to prevent HTTP-only builds from connecting to production APIs.",
+      "effort": "medium",
+      "verifyNotes": "The insecure HTTP defaults are confirmed in api_client.dart lines 30-34. However, the code implements a proper override mechanism via the API_BASE_URL environment variable (lines 24-28) using String.fromEnvironment(). Developers can set HTTPS endpoints during build with: flutter run --dart-define=API_BASE_URL=https://... The defaults are appropriate for local development, but MUST be overridden for any production or remote backend deployment. The severity is medium (not high) because the mitigation mechanism is properly implemented and available—the risk only manifests if developers fail to override the defaults when deploying to production. This is a configuration/documentation issue rather than a code defect.\"",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-security",
+      "title": "Excessive debug logging of application state and errors",
+      "category": "security",
+      "severity": "medium",
+      "locations": [
+        "lib/services/notas_service.dart:33,35,45,52,61,63,72,82",
+        "lib/pages/calculadora/calculadora_controller.dart:36,38,91,95",
+        "lib/services/courses_service.dart:32,34",
+        "lib/services/evaluations_service.dart:43,45",
+        "lib/components/header/app_header.dart:37",
+        "lib/models/curso_model.dart:33"
+      ],
+      "evidence": "15+ instances of print() and debugPrint() statements logging student IDs, error messages, course data, and application state. Example: 'print(\"✓ Notas guardadas para estudiante: $idEstudiante\")' exposes student identifiers; 'print(\"✓ Datos de cursos cargados: ${_coursesData.length} cursos\")' logs data counts.",
+      "impact": "Debug logs are visible in app console/logcat and may be captured in crash reporting or device logs. In a compromised or user-rooted device, these logs could expose student IDs, enrollment data, course information, and error details that aid attackers in understanding system structure.",
+      "remediation": "Remove all debug print() statements from production code. For logging: (1) Use a logger package with log-level filtering (e.g., logger package), (2) Strip debug logs in release builds via code transforms or conditional compilation, (3) Only log sanitized error messages without sensitive data (e.g., log 'Error saving data' not 'Error saving data for student 12345').",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-security",
+      "title": "Plaintext storage of student code in SharedPreferences",
+      "category": "security",
+      "severity": "medium",
+      "locations": [
+        "lib/services/storage_service.dart:45-47"
+      ],
+      "evidence": "Student code (username/identifier) is stored in SharedPreferences: 'Future<void> saveCode(String code) => _prefs.setString(_kCode, code);'. SharedPreferences provides no encryption on Android (stored in XML plaintext) or iOS (stored in standard user defaults).",
+      "impact": "Student code is stored unencrypted in device storage. If a device is compromised or stolen, attackers can easily extract student identifiers and use them with other attacks (credential stuffing, account enumeration). On Android, any app with READ_EXTERNAL_STORAGE or direct file access can read SharedPreferences.",
+      "remediation": "Migrate student code storage to FlutterSecureStorage (already used for tokens): change 'saveCode()' to use '_secureStorage.write()' instead of '_prefs.setString()'. FlutterSecureStorage encrypts data at rest using platform keystore (Android Keystore, iOS Keychain).",
+      "effort": "trivial",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-security",
+      "title": "Student setup data persisted in plaintext SharedPreferences",
+      "category": "security",
+      "severity": "medium",
+      "locations": [
+        "lib/services/storage_service.dart:128-156"
+      ],
+      "evidence": "Career ID, specialty selections, and setup completion status stored in plaintext: '_prefs.setInt(_kCareerId, careerId)', '_prefs.setString(_kEspecialidades, jsonEncode(...))', '_prefs.setBool(_kSetupComplete, setupComplete)'. Also persists per-user setups in '_kUserSetups' as JSON-encoded strings in SharedPreferences.",
+      "impact": "Student academic profile (career, specialties, enrollment status) is stored unencrypted. Combined with plaintext student code, this enables full profile reconstruction of any student on a compromised device.",
+      "remediation": "Move all setup data to FlutterSecureStorage or use encrypted SharedPreferences. Alternatively, fetch setup data fresh from backend on app launch instead of caching in local storage.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-security",
+      "title": "Missing .gitignore entries for sensitive configuration files",
+      "category": "config",
+      "severity": "medium",
+      "locations": [
+        ".gitignore"
+      ],
+      "evidence": ".gitignore does not include '.env', 'local.properties', 'GoogleService-Info.plist', or other common Firebase/OAuth configuration files. The file only ignores build artifacts but not configuration secrets.",
+      "impact": "If developers accidentally commit .env files, firebase config, or API keys in the future, these will not be automatically ignored by git. This increases risk of credential exposure in commits.",
+      "remediation": "Add the following lines to .gitignore: '.env', '.env.*', 'local.properties', 'GoogleService-Info.plist', 'google-services.json', '*.keystore', 'key.properties', '.firebase/'",
+      "effort": "trivial",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-deps-build",
+      "title": "Loose dependency constraints on production packages",
+      "category": "dependencies",
+      "severity": "medium",
+      "locations": [
+        "pubspec.yaml:31-45"
+      ],
+      "evidence": "url_launcher: ^6.3.2, get: ^4.6.5, http: ^1.6.0, shared_preferences: ^2.3.4, google_sign_in: ^6.2.1, flutter_svg: ^2.0.10+1 - All use caret constraints allowing major version changes",
+      "impact": "Dependency updates can introduce breaking changes. google_sign_in has upgrades available (6.3.0 → 7.2.0) and transitive deps have version gaps (e.g., google_sign_in_android 6.2.1 → 7.2.13). This risks unexpected behavior in production.",
+      "remediation": "Pin critical dependencies to specific versions: e.g., google_sign_in: '6.3.0', url_launcher: '6.3.2', http: '1.6.0'. Use ~X.Y.Z for patch-only updates if updates are desired.",
+      "effort": "small",
+      "verifyNotes": "The claim is based on real observations: pubspec.yaml does use caret constraints (^) on production packages at the specified lines. However, the severity is overstated. Caret constraints are the Dart/Flutter standard and actually prevent major version changes (e.g., ^6.2.1 will not allow 7.x). The real risk is limited to minor/patch updates within the locked major version. The claim's example about google_sign_in upgrading from 6.3.0 to 7.2.0 is misleading—7.x would not be selected by ^6.2.1. Some transitive dependencies are outdated (e.g., google_sign_in_android 6.2.1), creating a moderate maintenance burden. The issue exists but should be classified as medium risk rather than high, as this is standard dependency management practice in Dart projects.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-deps-build",
+      "title": "Outdated transitive dependencies with major version gaps",
+      "category": "dependencies",
+      "severity": "medium",
+      "locations": [
+        "pubspec.lock:203-226 (google_sign_in and platform packages)"
+      ],
+      "evidence": "google_sign_in 6.3.0 (latest 7.2.0), google_sign_in_android 6.2.1 (latest 7.2.13), google_sign_in_ios 5.9.0 (latest 6.3.0), vector_graphics 1.2.1 (latest 1.2.2), vector_graphics_compiler 1.2.2 (latest 1.2.5)",
+      "impact": "Significant lag in platform-specific packages (google_sign_in) creates compatibility risks and misses security patches. vector_graphics updates may include important fixes.",
+      "remediation": "Run 'flutter pub upgrade' to pull in compatible upgrades. For google_sign_in, consider upgrading to 7.2.0+ if compatible with your code.",
+      "effort": "medium",
+      "verifyNotes": "The claim accurately identifies the dependency versions in pubspec.lock: google_sign_in 6.3.0, google_sign_in_android 6.2.1, google_sign_in_ios 5.9.0, vector_graphics 1.2.1, and vector_graphics_compiler 1.2.2 at the cited lines. However, the severity is MEDIUM rather than HIGH because: (1) google_sign_in's constraint in pubspec.yaml is ^6.2.1, which intentionally caps at major version 6, suggesting deliberate version pinning rather than neglect; (2) transitive dependencies like platform (3.1.6) are not directly controllable; (3) vector_graphics gap (1.2.1 to claimed 1.2.2) is a minor patch version and low-risk. The real issue is the unclaimed constraint on google_sign_in allowing a major version 6 when versions 7+ exist, but this reflects the project's declared dependency policy, not lock file drift. Not a critical debt item without evidence the team wants to upgrade to 7.x.\"",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-deps-build",
+      "title": "Dead code unreachable due to early return",
+      "category": "error-handling",
+      "severity": "medium",
+      "locations": [
+        "lib/services/auth_service.dart:95"
+      ],
+      "evidence": "Line 94 has 'return e.message;' followed by unreachable line 95 'return 'No se pudo conectar con el servidor.';' in the same catch block",
+      "impact": "Dead code indicates logic error. The fallback error message will never execute, potentially masking genuine connection failures.",
+      "remediation": "Remove the unreachable return statement or restructure the catch logic to handle different exception types appropriately.",
+      "effort": "small",
+      "verifyNotes": "Confirmed genuine dead code: line 95 'return 'No se pudo conectar con el servidor.';' is unreachable because line 94 has 'return e.message;' in the same catch block. This is a logic error where an early return prevents fallback error handling. The severity is MEDIUM (not high) because: (1) the current behavior of returning e.message is functionally safe and won't crash; (2) however, it does lose the defensive fallback intent, and if e.message is null/empty, no proper error message would be returned. The correct fix would be: 'return e.message ?? 'No se pudo conectar con el servidor.';' Categorized as error-handling debt.\"",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-deps-build",
+      "title": "Pervasive use of print() in production code",
+      "category": "code-quality",
+      "severity": "medium",
+      "locations": [
+        "lib/components/calculadora/nota_tile.dart:81",
+        "lib/components/header/app_header.dart:37",
+        "lib/models/curso_model.dart:33",
+        "lib/pages/calculadora/calculadora_controller.dart:36,38,91,95,147",
+        "lib/services/courses_service.dart:32,34",
+        "lib/services/evaluations_service.dart:43,45",
+        "lib/services/notas_service.dart:33,35,45,52,61,63,72,82"
+      ],
+      "evidence": "18+ instances of print() calls across services and controllers. flutter analyze reports 'avoid_print' violations in 8+ files",
+      "impact": "Debug output clutters production logs, impacts app performance, and exposes internal state. Makes troubleshooting harder by mixing debug and user-facing output.",
+      "remediation": "Replace all print() calls with a structured logging framework (e.g., logger, talker, or custom wrapper). Disable debug output in release builds.",
+      "effort": "medium",
+      "verifyNotes": "CONFIRMED: There are exactly 21 print() statements across 7 Dart files (not 18+ as claimed, but the claim is accurate overall). Files verified: nota_tile.dart (line 81), app_header.dart (line 37), curso_model.dart (line 33), calculadora_controller.dart (lines 36, 38, 91-93, 95, 147), courses_service.dart (lines 32, 34), evaluations_service.dart (lines 43, 45), notas_service.dart (lines 33, 35, 45, 52, 61, 63, 72, 82). All print statements are informational/diagnostic with emoji prefixes (✓, ✗, ⚠️, ✅). The issue is REAL but severity should be MEDIUM, not HIGH. Reasoning: (1) Print statements are contextually used in try-catch blocks and initialization/loading methods—they're intentional logging, not accidental debug code; (2) They don't expose sensitive data—only counts and generic status messages; (3) The impact on production logs is manageable if the app controls where logs go (Flutter apps can redirect stdout); (4) This is a code-quality issue requiring refactoring to use a proper logging framework, but it's not a critical security or performance concern. Better classification: technical debt requiring migration from print() to a structured logging solution (e.g., logger package, Sentry, Firebase Crashlytics), but not high-severity in isolation.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-deps-build",
+      "title": "Deprecated Color.withOpacity() used extensively",
+      "category": "code-quality",
+      "severity": "medium",
+      "locations": [
+        "lib/components/calculadora/add_score.dart:174,176,195,205,219,272,274,296,330,337,343,369,395",
+        "lib/components/calculadora/curso_card.dart:41,77,121,130",
+        "lib/components/calculadora/nota_tile.dart:28,49",
+        "lib/pages/horario/horario.dart:215,239"
+      ],
+      "evidence": "19 instances of withOpacity() calls. Flutter analyzer warns: 'withOpacity is deprecated and shouldn't be used. Use .withValues() to avoid precision loss.'",
+      "impact": "Deprecated API usage risks breaking in future Flutter versions. Precision loss in color transparency values can cause visual inconsistencies.",
+      "remediation": "Replace Color.withOpacity(x) with Color.withValues(alpha: x) throughout the codebase. This preserves color precision.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-deps-build",
+      "title": "JSON assets not declared in pubspec.yaml",
+      "category": "config",
+      "severity": "medium",
+      "locations": [
+        "pubspec.yaml:70-71",
+        "assets/data/ directory"
+      ],
+      "evidence": "assets: { - assets/images/ } only. The assets/data/ directory contains 15 JSON files (anuncios.json, courses.json, evaluaciones.json, malla_sistemas.json, etc.) but is not declared.",
+      "impact": "Flutter asset compilation does not bundle JSON data files. They will not be available at runtime unless bundled separately, causing app failures when attempting to load local JSON.",
+      "remediation": "Add '- assets/data/' to the assets section in pubspec.yaml: assets: { - assets/images/, - assets/data/ }",
+      "effort": "trivial",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-deps-build",
+      "title": "Local environment configuration committed to git",
+      "category": "config",
+      "severity": "medium",
+      "locations": [
+        "android/local.properties"
+      ],
+      "evidence": "File contains machine-specific paths: sdk.dir=C:\\\\Users\\\\Jefferson\\\\AppData\\\\Local\\\\Android\\\\sdk, flutter.sdk=C:\\\\Users\\\\Jefferson\\\\development\\\\flutter. Listed in .gitignore but committed to git.",
+      "impact": "Build breaks for other developers with different SDK paths. Exposes local system paths in public repository.",
+      "remediation": "Add local.properties to .gitignore (it already is), then run 'git rm --cached android/local.properties' and recreate it locally. Document setup steps in README.",
+      "effort": "trivial",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-deps-build",
+      "title": "Missing CI/CD pipeline configuration",
+      "category": "build",
+      "severity": "medium",
+      "locations": [
+        "Repository root"
+      ],
+      "evidence": "No .github/workflows/, .gitlab-ci.yml, .circleci/, or similar CI configuration. No automated testing, linting, or build verification.",
+      "impact": "No automated quality gates. Manual build/test required. Lint violations (deprecated APIs, print statements, dead code) will not be caught before merge.",
+      "remediation": "Add GitHub Actions workflow (.github/workflows/ci.yml) to run 'flutter analyze', 'flutter test', and 'flutter build apk/ios' on PRs. Include lint rule enforcement.",
+      "effort": "medium",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-deps-build",
+      "title": "Loose lint configuration with disabled rules",
+      "category": "code-quality",
+      "severity": "medium",
+      "locations": [
+        "analysis_options.yaml:24-25"
+      ],
+      "evidence": "Commented-out lint rules: '# avoid_print: false', '# prefer_single_quotes: true'. Only includes flutter_lints without project-specific overrides.",
+      "impact": "No explicit enforcement of code standards. Print statements and deprecated APIs are reported as infos, not errors. avoid_print is not actually disabled but warnings are not enforced as errors.",
+      "remediation": "Uncomment and enable strict rules: avoid_print: true, deprecated_member_use: error. Add enforce_api_consistency: true, sort_pub_dependencies: true to catch more issues.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-testing",
+      "title": "Debug print() statements left in production code",
+      "category": "error-handling",
+      "severity": "medium",
+      "locations": [
+        "lib/services/courses_service.dart:32,34",
+        "lib/services/evaluations_service.dart:43,45",
+        "lib/services/notas_service.dart:33,35,45,52,61,63,72,82",
+        "lib/pages/calculadora/calculadora_controller.dart:36,38,91,95",
+        "lib/components/header/app_header.dart:37",
+        "lib/components/calculadora/nota_tile.dart:81",
+        "lib/models/curso_model.dart:33"
+      ],
+      "evidence": "20+ print() calls left in code (confirmed by grep). Examples: `print('✓ Datos de cursos cargados: ${_coursesData.length} cursos')` (courses_service:32), `print('✗ Error al cargar datos: $e')` (evaluations_service:45), etc.",
+      "impact": "Clutters app console output, makes debugging hard, slightly increases app size, and indicates code was not properly cleaned before release.",
+      "remediation": "Replace all print() with proper logging: use dart:developer.log(), or a logging package like logger. Remove debug messages or gate them behind debug-only flags. Use `if (kDebugMode) print()` for development-only logs.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-testing",
+      "title": "No null-safety enforcement — analysis_options.yaml is minimal",
+      "category": "error-handling",
+      "severity": "medium",
+      "locations": [
+        "analysis_options.yaml:12-26"
+      ],
+      "evidence": "analysis_options.yaml includes only `package:flutter_lints/flutter.yaml` with no custom overrides. Comments mention optional lints like `avoid_print` and `prefer_single_quotes` but they're all commented out. No strict null-safety rules enabled.",
+      "impact": "Null pointer exceptions can slip through. No enforcement of null-coalescing or null-checking in critical paths. The `late` fields throughout the codebase are not caught by linting.",
+      "remediation": "Add strict lint rules: `unsafe_html: true`, `always_declare_return_types: true`, `always_put_required_named_parameters_first: true`. Enable `avoid_print` to enforce the logging fix above.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-testing",
+      "title": "Missing error states and loading states in key pages",
+      "category": "error-handling",
+      "severity": "medium",
+      "locations": [
+        "lib/pages/descripcion_cursos/descrip_cursos.dart",
+        "lib/pages/horario/horario.dart",
+        "lib/pages/perfil/perfil.dart"
+      ],
+      "evidence": "Pages like DescripCursos have `isLoading` RxBool but no corresponding error state display. malla_page shows loading spinner (line 35-40) but no error fallback UI. calculadora_page has no loading state at all for the initial data load.",
+      "impact": "User doesn't know if data is loading, failed, or empty. Network timeouts show blank screens. No feedback to user.",
+      "remediation": "Add error state to all pages that load data. Show: 1) Loading spinner while fetching, 2) Error message + retry button if failed, 3) Empty state if no data. Use Obx to reactively show states.",
+      "effort": "medium",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-testing",
+      "title": "Race condition: CoursesService and EvaluationSyllabusService called before load() in main.dart",
+      "category": "error-handling",
+      "severity": "medium",
+      "locations": [
+        "lib/main.dart:30-32",
+        "lib/services/courses_service.dart:19-36",
+        "lib/services/evaluations_service.dart:22-48"
+      ],
+      "evidence": "main() calls `Future.wait([...loadEvaluationData(), ...loadCoursesData()])` (line 30-32) but then immediately creates pages that access CoursesService.allCourses and EvaluationSyllabusService.allSyllabuses. If the Future.wait completes but assignment is still pending, accessing the late fields will crash.",
+      "impact": "Rare but critical: late-init crash if the async load hasn't completed before the page tries to access the data.",
+      "remediation": "Ensure Future.wait completes fully before accessing the services. Or make allCourses/allSyllabuses return empty list safely until loaded. Use `_isLoaded` flag more strictly.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-testing",
+      "title": "Missing input validation and sanitization in user input fields",
+      "category": "error-handling",
+      "severity": "medium",
+      "locations": [
+        "lib/pages/login/login_controller.dart:17-40",
+        "lib/pages/calculadora/calculadora_controller.dart:99-110",
+        "lib/pages/setup_carrera/setup_carrera_controller.dart:79-109"
+      ],
+      "evidence": "login_controller only checks `if (code.isEmpty || password.isEmpty)` (line 21) but doesn't validate format, length, or special characters. calculadora_controller calculates promedio without validating that `n['valor']` and `n['peso']` are valid numbers (line 103-104). No bounds checking.",
+      "impact": "Malformed input (SQL injection attempts, buffer overflows, invalid calculations) could cause crashes or data corruption.",
+      "remediation": "Add validators: check code format (numeric, length range), validate password strength, validate nota values are 0-20 and peso is 0-100. Use controllers with input formatters.",
+      "effort": "medium",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-architecture",
+      "title": "Controllers in some modules have empty or minimal implementation",
+      "category": "dead-code",
+      "severity": "low",
+      "locations": [
+        "src/modules/grades/grades.controller.ts",
+        "src/modules/alerts/alerts.controller.ts"
+      ],
+      "evidence": "GradesController has only empty constructor and no methods. AlertsController has only empty constructor. Yet they are instantiated in index.ts and passed to routes. Routes never actually call the controller methods (they bypass and hit DB directly in route handlers).",
+      "impact": "Boilerplate code that serves no purpose. Indicates incomplete refactoring: the route handler logic was never moved into controllers. Confusing for developers reading the code (why is there a controller if routes don't use it?).",
+      "remediation": "Either populate controller methods with HTTP coordination logic and remove DB calls from routes, or remove the empty controllers and route factory functions entirely if that pattern is not being used.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-quality",
+      "title": "Commented-out code with ambiguous intent",
+      "category": "dead-code",
+      "severity": "low",
+      "locations": [
+        "src/modules/auth/auth.service.ts:22-23",
+        "src/db/relations/index.ts:1-2",
+        "src/events/index.ts:2"
+      ],
+      "evidence": "Comments like 'Import bcrypt dynamically to avoid global dependency issues if needed, or use the top level import. We will need to make sure bcrypt is imported at the top of the file' (lines 22-23) describe a decision that was already made (dynamic import was used). Similarly, intentional empty implementations in events/index.ts and db/relations/index.ts have comments but code is unused.",
+      "impact": "Confusion about whether code is incomplete or intentionally stubbed; maintenance noise; violates 'comments should explain why, not what'",
+      "remediation": "Remove the bcryptjs comment—the dynamic import is already in place. For intentional stubs (events, relations), add one-line comments only: '// [TODO-PHASE-2]: Observer pattern to be implemented' if unfinished, or delete if intentionally empty by design.",
+      "effort": "trivial",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-quality",
+      "title": "Row type casting with 'as unknown as' pattern everywhere",
+      "category": "typing",
+      "severity": "low",
+      "locations": [
+        "src/modules/academic-profile/academic-profile.repository.ts:75,127,146,169,193,254,271,288",
+        "src/modules/auth/auth.repository.ts:61,84,113,139,152,167,230,257",
+        "src/modules/schedule/schedule.repository.ts:75,112,130",
+        "src/modules/curriculum/curriculum.repository.ts:14,50,63,89",
+        "src/shared/middleware/auth-middleware.ts:35,56,98"
+      ],
+      "evidence": "Across 38+ type assertions using 'as unknown as Array<...>' pattern. While this works, it's verbose and indicates implicit typing. TypeScript best practice is to type the execute() call result directly.",
+      "impact": "Verbose, repetitive code; doesn't improve type safety if row types are not properly defined; readability reduced",
+      "remediation": "If db.execute() is generic, consider wrapping: `const query = <T>(sql: SQL) => db.execute(sql) as Promise<T[]>;` Then use: `const rows = await query<ProfileRow>(sql...)`. Or ask Drizzle to provide typed queries directly.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-quality",
+      "title": "Inconsistent field naming conventions in response objects",
+      "category": "consistency",
+      "severity": "low",
+      "locations": [
+        "src/modules/auth/auth.repository.ts:190-210",
+        "src/modules/course-detail/course-detail.routes.ts:42-52,97-103"
+      ],
+      "evidence": "AuthUser object has both camelCase (careerId, curriculumId) AND snake_case (career_id, curriculum_id) AND Spanish (especialidad_principal, especialidades_interes). Course detail routes use mixed naming: idSeccion (camelCase prefix), codigoSeccion, docenteCode vs idCurso, curso, asistido. Inconsistent field order and naming scheme.",
+      "impact": "Frontend SDK generation is confusing; API documentation is hard to follow; client code must handle multiple naming conventions; increases bugs in integrations",
+      "remediation": "Choose one convention: either all camelCase (idSeccion, codigoSeccion, docenteCode) or consistent English names. Remove duplicates (don't have both careerId and career_id). Document in API contract. Validate with Zod schemas.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-security",
+      "title": "Sensitive fields (passwordHash) deleted from response object using runtime type coercion",
+      "category": "information-disclosure",
+      "severity": "low",
+      "locations": [
+        "src/modules/auth/auth.service.ts:38"
+      ],
+      "evidence": "Password hash removal uses 'delete (safeUser as { passwordHash?: string }).passwordHash;' which relies on runtime deletion after object creation, not type-safe exclusion",
+      "impact": "If passwordHash is accidentally retained in the object tree or serialization, it could leak. Type-safe response DTOs would prevent this.",
+      "remediation": "Use explicit response DTOs that exclude passwordHash at the type level, e.g., Omit<User, 'passwordHash'>, rather than runtime deletion",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-deps-build",
+      "title": "skipLibCheck enabled, masking potential type issues",
+      "category": "testing",
+      "severity": "low",
+      "locations": [
+        "tsconfig.json:10"
+      ],
+      "evidence": "tsconfig.json sets 'skipLibCheck': true, which skips type-checking of .d.ts files in node_modules. This is often done to speed up TypeScript but can hide version mismatches or incompatibilities between declared types and actual runtime behavior, especially important given the loose dependency versions and unused deps (google-auth-library, AWS SDK).",
+      "impact": "Type errors in third-party libraries (or in our type assertions) go undetected; false confidence in type safety; harder to debug runtime type errors.",
+      "remediation": "Change 'skipLibCheck' to false (or remove it, default is false in strict mode). If compilation becomes slow, profile and optimize specific slow packages rather than blanket-skipping. Alternatively, keep it but add a pre-commit 'type-check' step with skipLibCheck disabled.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-deps-build",
+      "title": "No .env file validation or documentation",
+      "category": "config",
+      "severity": "low",
+      "locations": [
+        ".env (committed with secrets)",
+        ".env.example (static placeholder)"
+      ],
+      "evidence": ".env file is committed to git (likely contains sensitive values like DATABASE_URL and AWS/Google credentials based on .env.example). .env should never be committed; only .env.example with placeholders should be. test-db.cjs and patch-schedule-classrooms.cjs hardcode DATABASE_URL in scripts.",
+      "impact": "Security risk: database credentials and API keys exposed in git history; accidental secret leak to public repos; difficult to rotate credentials; CI/CD secrets management confusion.",
+      "remediation": "1) Add .env to .gitignore immediately. 2) Run 'git rm --cached .env' and 'git commit'. 3) Rotate any exposed secrets. 4) Keep only .env.example with placeholder values. 5) Document required env vars in README or .env.example with comments.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-testing",
+      "title": "No pagination on list endpoints",
+      "category": "performance",
+      "severity": "low",
+      "locations": [
+        "src/modules/course-detail/course-detail.routes.ts:20-112",
+        "src/modules/section-management/section-management.routes.ts:10-39"
+      ],
+      "evidence": "GET /sections, /teachers, /enrollments return all rows without pagination: db.execute(sql`...order by... `) loads entire result set into memory. No limit/offset in queries.",
+      "impact": "Large datasets cause memory spikes. Response times degrade with data growth. No streaming or pagination available for frontend.",
+      "remediation": "Add limit/offset query params. Validate: limit <= 100, offset >= 0. Document default page size.",
+      "effort": "medium",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-testing",
+      "title": "Race condition in token version validation",
+      "category": "concurrency",
+      "severity": "low",
+      "locations": [
+        "src/shared/middleware/auth-middleware.ts:95-103"
+      ],
+      "evidence": "Token version check: query db for token_version, compare against JWT payload. No lock. Between check and subsequent queries, token could be invalidated (logout in another request).",
+      "impact": "Stale reads possible. User could make requests after logout if timing is right. Low probability but hard to debug.",
+      "remediation": "Use database-level row versioning or add transaction with SELECT FOR UPDATE. Or accept eventual consistency and document.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "backend",
+      "dimension": "BE-testing",
+      "title": "No request timeout protection",
+      "category": "reliability",
+      "severity": "low",
+      "locations": [
+        "src/server.ts",
+        "src/modules/curriculum/curriculum.repository.ts"
+      ],
+      "evidence": "Async database queries have no timeout. If database query hangs, request waits indefinitely. No timeout config in postgres() connection or per-query.",
+      "impact": "Hanging requests accumulate, exhaust connection pool, server becomes unresponsive.",
+      "remediation": "Add postgres connection timeout (connect_timeout) and per-query timeout with AbortController or Promise.race.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-architecture",
+      "title": "Mixed async/await and future chaining patterns in controllers",
+      "category": "code-quality",
+      "severity": "low",
+      "locations": [
+        "lib/pages/calculadora/calculadora_controller.dart",
+        "lib/pages/horario/horario_controller.dart"
+      ],
+      "evidence": "CalculadoraController has async void methods without awaits (lines 30, 42, 143-148). HorarioController does the same (lines 29, 54). Both use print() for debugging instead of proper logging.",
+      "impact": "Unpredictable async execution order. Silent failures if async operation throws before await point.",
+      "remediation": "Remove async void; use Future<void> instead. Add proper logging. Use structured concurrency patterns with try-catch-finally.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-quality",
+      "title": "Unverified lint rules in analysis_options.yaml - linter is nearly unconfigured",
+      "category": "config",
+      "severity": "low",
+      "locations": [
+        "analysis_options.yaml:23-25"
+      ],
+      "evidence": "analysis_options.yaml includes only default flutter_lints with all rules commented out/disabled: avoid_print rule is explicitly commented; prefer_single_quotes rule is commented; no custom rules enabled",
+      "impact": "Allows print() statements (which are present, see high-severity finding above); no style consistency enforcement; misses low-hanging fruit for code quality",
+      "remediation": "Enable avoid_print rule; enable prefer_const_constructors; enable appropriate rules from flutter_lints; document any disabled rules with rationale",
+      "effort": "trivial",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-quality",
+      "title": "Unused/suspicious code patterns in model classes",
+      "category": "dead-code",
+      "severity": "low",
+      "locations": [
+        "lib/models/contacto_model.dart:9",
+        "lib/models/malla_models.dart:160",
+        "lib/models/user_model.dart:76"
+      ],
+      "evidence": "ContactoCurso has void operator [](String other) {} which is never called; malla_models has commented-out 'final Set<String> currentCourses' with note about migration; user_model.dart has migration comment about legacy list handling",
+      "impact": "Code clutter; technical debt; potential for bugs during refactoring",
+      "remediation": "Remove operator [] from ContactoCurso; remove commented migration code; create explicit version migration method if needed; add unit test for migration logic",
+      "effort": "trivial",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-quality",
+      "title": "Loose type safety with Map<String, dynamic> used extensively",
+      "category": "architecture",
+      "severity": "low",
+      "locations": [
+        "lib/pages/calculadora/calculadora_controller.dart:9",
+        "lib/pages/calculadora/calculadora_page.dart:102-107",
+        "lib/components/calculadora/curso_card.dart:6",
+        "lib/components/calculadora/add_score.dart:8"
+      ],
+      "evidence": "cursos defined as <Map<String, dynamic>>[].obs; curso accessed as Map in loops; 'curso['notas']', 'curso['nombre']', 'curso['codigoSeccion']' - all string lookups without type safety; no model class wrapping the data",
+      "impact": "No compile-time type checking; runtime crashes on missing keys; poor IDE autocomplete; violates DRY and makes refactoring fragile",
+      "remediation": "Create Curso and NotaRecord model classes; use typed lists instead of Map<String, dynamic>; add fromJson/toJson for type-safe parsing",
+      "effort": "medium",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-security",
+      "title": "Course status map stored unencrypted in SharedPreferences",
+      "category": "security",
+      "severity": "low",
+      "locations": [
+        "lib/services/storage_service.dart:160-172"
+      ],
+      "evidence": "saveStatuses() stores course completion/enrollment status as JSON in plaintext SharedPreferences: 'await _prefs.setString(_kStatuses, jsonEncode(map))' and also persists per-user status maps in '_kUserStatuses'.",
+      "impact": "Student enrollment and course progress status is unencrypted. While lower sensitivity than credentials, this data combined with student ID can reveal course history and academic performance.",
+      "remediation": "Move status maps to FlutterSecureStorage alongside token and setup data. Use consistent encrypted storage for all personal student data.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-security",
+      "title": "Google Sign-In without server-side validation of idToken",
+      "category": "security",
+      "severity": "low",
+      "locations": [
+        "lib/services/auth_service.dart:101-148"
+      ],
+      "evidence": "loginWithGoogle() obtains idToken from Google Sign-In and sends it directly to backend via POST /auth/google without local validation. Client-side validation is not shown; the token is passed as-is to the backend.",
+      "impact": "While the token should be validated server-side (which is the responsibility of the backend /auth/google endpoint), the client should also verify the token locally for defense-in-depth. Missing local validation means a compromised backend validation could allow spoofed tokens.",
+      "remediation": "Add optional client-side validation of the Google idToken using the google_id_token package or similar before sending to backend. Validate token signature, expiration, and audience. This is a defense-in-depth measure; backend validation is the primary control.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-deps-build",
+      "title": "Podfile.lock and Podfile.lock committed (iOS dependencies)",
+      "category": "dependencies",
+      "severity": "low",
+      "locations": [
+        "ios/Podfile.lock",
+        "macos/Podfile.lock"
+      ],
+      "evidence": "Both lock files are committed to git (verified via 'git ls-files'). These platform-specific lock files should be regenerated per environment.",
+      "impact": "CocoaPods lock files can cause build inconsistencies across developers if not regenerated. Increases repository size with binary metadata.",
+      "remediation": "Add 'ios/Podfile.lock' and 'macos/Podfile.lock' to .gitignore. Ensure iOS developers run 'flutter pub get' to regenerate locally.",
+      "effort": "trivial",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-deps-build",
+      "title": "Release build version pinned to 1.0.0+1",
+      "category": "config",
+      "severity": "low",
+      "locations": [
+        "pubspec.yaml:19",
+        "android/local.properties:4-5"
+      ],
+      "evidence": "version: 1.0.0+1 in pubspec.yaml. flutter.versionName=1.0.0, flutter.versionCode=1 in local.properties (hardcoded).",
+      "impact": "Version must be manually updated for each release. No automated versioning. Makes it difficult to track deployed versions.",
+      "remediation": "Implement a versioning strategy (semantic versioning + build metadata). Use CI/CD to auto-increment build codes or adopt a tool like pubspec_extract_version.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-deps-build",
+      "title": "Minimal asset optimization",
+      "category": "build",
+      "severity": "low",
+      "locations": [
+        "assets/ directory",
+        "pubspec.yaml:70-71"
+      ],
+      "evidence": "SVG images committed (12.3 KB logo, 6.5 KB secondary). JSON test data (15 files, ~80 KB total) included in release bundle.",
+      "impact": "Release APK includes unnecessary test data (anuncios.json, evaluaciones.json, etc.). No image optimization directives.",
+      "remediation": "Move test/mock JSON to a separate assets/mocks/ directory and exclude from release builds. Consider using WebP/PNG variants for images via flutter image resolution handling.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-deps-build",
+      "title": "Android Gradle configuration with deprecated Kotlin built-in",
+      "category": "build",
+      "severity": "low",
+      "locations": [
+        "android/gradle.properties:4"
+      ],
+      "evidence": "android.builtInKotlin=false is set. Comment says 'added automatically by Flutter migrator' suggesting legacy configuration.",
+      "impact": "Deprecated flag may be ignored in newer Gradle versions. Not critical but indicates incomplete migration cleanup.",
+      "remediation": "Verify current Gradle (8.11.1) behavior with this flag. If not needed, remove the property and test the build.",
+      "effort": "trivial",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-testing",
+      "title": "Unreachable code in auth_service.login() — line 95 is dead",
+      "category": "error-handling",
+      "severity": "low",
+      "locations": [
+        "lib/services/auth_service.dart:94-95"
+      ],
+      "evidence": "In the ApiException catch block (line 87), line 94 returns `e.message`. Line 95 `return 'No se pudo conectar con el servidor.';` is unreachable dead code.",
+      "impact": "Dead code is a sign of incomplete error handling logic. The fallback message is never used, suggesting the error path may be incomplete or the logic was refactored incorrectly.",
+      "remediation": "Remove line 95 or refactor the catch block to have a generic catch clause for non-ApiException errors: `} on ApiException catch (e) { ... } catch (_) { return 'No se pudo conectar con el servidor.'; }`",
+      "effort": "trivial",
+      "verifyNotes": "The claim is accurate: line 95 is dead code unreachable due to the return statement on line 94. However, severity is overstated. This is a code quality/maintenance issue, not a functional bug. The error handling works correctly — it returns e.message instead of using the fallback. The issue appears to be incomplete refactoring (either the line 94 return should not exist, or line 95 should have different logic). Since the app functions correctly despite this dead code, severity should be 'low', not 'high'.",
+      "verifyConfidence": "high"
+    },
+    {
+      "repo": "frontend",
+      "dimension": "FE-testing",
+      "title": "No logout error handling — network errors silently ignored",
+      "category": "error-handling",
+      "severity": "low",
+      "locations": [
+        "lib/services/auth_service.dart:195-214"
+      ],
+      "evidence": "logout() method (line 199-206) calls `_api.postJson('/auth/logout', ...)` in a try-catch but the catch silently ignores all errors with comment 'Logout es stateless'. While conceptually correct, it means if logout() is called but network is down, the API call hangs and silently times out, blocking the logout flow.",
+      "impact": "Logout may appear to succeed locally but server session isn't terminated. Low severity because local session is cleared regardless, but server-side session orphaning can occur.",
+      "remediation": "Add timeout to logout request, or add logging to track silent errors. Ensure logout completes within reasonable time even if server is unreachable.",
+      "effort": "small",
+      "verifyNotes": "medium/low severity — accepted without adversarial verification",
+      "verifyConfidence": "medium"
+    }
+  ]
+}
