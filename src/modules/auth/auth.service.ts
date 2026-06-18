@@ -76,6 +76,11 @@ export class AuthService {
       const user = await this.repository.findByEmail(email);
       if (!user) throw new HttpError(401, "Usuario no registrado en la base de datos.", "USER_NOT_FOUND");
 
+      // Vincular la cuenta de Google: guarda el `sub` (ID único de Google) como google_id.
+      if (payload.sub) {
+        await this.repository.linkGoogleId(user.id, payload.sub);
+      }
+
       const hasActiveEnrollment = await this.repository.hasActiveEnrollment(user.studentId);
       if (!hasActiveEnrollment) {
         throw new HttpError(403, "El estudiante no tiene una matrícula activa.", "NOT_ENROLLED");

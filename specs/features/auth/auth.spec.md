@@ -83,6 +83,11 @@ targets:
 - **Nunca** se devuelve un usuario "mock"/sintético (p. ej. `id = 0`, `code = "00000000"`) ni se firma un JWT en una ruta de error.
 - Aplica a `login`, `loginWithGoogle`, `me` y a la validación de `tokenVersion` del middleware.
 
+### BR-AUTH-10: Vinculación de Google SSO (google_id)
+- En `POST /auth/google`, tras verificar el `idToken` y ubicar al usuario por `institutional_email`, se **guarda el `sub` de Google** (ID único de la cuenta) en `app_user.google_id`.
+- La columna `app_user.google_id` (`varchar(255)`, nullable) existe en la BD.
+- El guardado es idempotente (solo escribe si cambió) y no bloquea el login si el usuario ya estaba vinculado.
+
 ## Endpoints
 
 ### POST /auth/login
