@@ -3,6 +3,7 @@ import type { AuthRepository } from "./auth.repository.js";
 import { HttpError } from "../../shared/errors/http-error.js";
 import { OAuth2Client } from "google-auth-library";
 import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
 import { config } from "../../config/app-config.js";
 import type { AppRole } from "./auth.types.js";
 
@@ -18,10 +19,7 @@ export class AuthService {
     try {
       const user = await this.repository.findByCodeWithPassword(input.code);
       if (!user) throw new HttpError(401, "Código no encontrado en la base de datos.", "USER_NOT_FOUND");
-      
-      // Import bcrypt dynamically to avoid global dependency issues if needed, or use the top level import.
-      // We will need to make sure bcrypt is imported at the top of the file.
-      const bcrypt = await import("bcryptjs");
+
       const passwordMatches = await bcrypt.compare(input.password, user.passwordHash);
       if (!passwordMatches) throw new HttpError(401, "Contraseña incorrecta.", "INVALID_PASSWORD");
 
