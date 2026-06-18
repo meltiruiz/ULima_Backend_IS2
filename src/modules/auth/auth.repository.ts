@@ -63,6 +63,17 @@ export class AuthRepository {
     return Number(rows[0]?.token_version ?? 1);
   }
 
+  /** Vincula (guarda) el ID único de Google (`sub`) del usuario al autenticarse
+   *  con Google SSO. Idempotente: solo escribe si cambió. */
+  async linkGoogleId(userId: number, googleId: string): Promise<void> {
+    await this.database.execute(sql`
+      update app_user
+      set google_id = ${googleId}
+      where id = ${userId}
+        and (google_id is null or google_id <> ${googleId})
+    `);
+  }
+
   async findByCodeWithPassword(code: string): Promise<AuthUserWithPassword | null> {
     const rows = await this.database.execute(sql`
       select
