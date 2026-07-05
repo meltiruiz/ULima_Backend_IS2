@@ -5,9 +5,30 @@ import { OAuth2Client } from "google-auth-library";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { config } from "../../config/app-config.js";
-import type { AppRole } from "./auth.types.js";
+import type { AppRole, PasswordResetUser } from "./auth.types.js";
+import {
+  generateOtp,
+  hashOtp,
+  maskEmail,
+  MAX_RESET_ATTEMPTS,
+  MIN_PASSWORD_LENGTH,
+  OTP_EXPIRATION_MINUTES,
+  validateNewPassword,
+  validateResetToken,
+} from "./password-reset.logic.js";
+import { sendPasswordResetEmail } from "../../shared/email/resend-client.js";
 
 const googleClient = new OAuth2Client();
+
+// Mismo costo por defecto de bcryptjs (10) usado en los hashes existentes de app_user.
+const BCRYPT_COST = 10;
+
+// Rate limit: máximo 3 tokens de restablecimiento creados por usuario por hora.
+const RESET_RATE_LIMIT_MAX_TOKENS = 3;
+const RESET_RATE_LIMIT_WINDOW_MINUTES = 60;
+
+// Mensaje genérico: nunca revela si la cuenta existe.
+const GENERIC_RESET_REQUEST_MESSAGE = "Si la cuenta existe, enviamos un código a tu correo institucional.";
 
 export class AuthService {
   constructor(
@@ -127,6 +148,138 @@ export class AuthService {
       console.error('DB Error in auth.service me', e);
       throw new HttpError(500, "Error interno del servidor.", "INTERNAL_ERROR");
     }
+  }
+
+  /**
+   * HU20: solicita un código de restablecimiento por código de alumno o correo
+   * institucional. Siempre responde el mismo mensaje genérico (200), exista o
+   * no la cuenta, para no permitir enumeración de usuarios.
+   */
+  async requestPasswordReset(input: { identifier: string }) {
+    const genericResponse = { message: GENERIC_RESET_REQUEST_MESSAGE };
+    try {
+      const user = await this.repository.findUserForPasswordReset(input.identifier);
+      if (!user) return genericResponse;
+
+      await this.issuePasswordResetToken(user);
+      return genericResponse;
+    } catch (e) {
+      if (e instanceof HttpError) throw e;
+      console.error('DB Error in auth.service requestPasswordReset', e);
+      throw new HttpError(500, "Error interno del servidor.", "INTERNAL_ERROR");
+    }
+  }
+
+  /**
+   * HU20: igual que `requestPasswordReset`, pero para el usuario autenticado
+   * (JWT). Responde el correo enmascarado para que el frontend lo muestre.
+   */
+  async requestPasswordResetForCurrentUser(userId: number) {
+    try {
+      const user = await this.repository.findUserForPasswordResetById(userId);
+      if (!user) throw new HttpError(404, "Usuario no encontrado.", "USER_NOT_FOUND");
+
+      await this.issuePasswordResetToken(user);
+      return {
+        message: "Enviamos un código a tu correo institucional.",
+        email: maskEmail(user.institutionalEmail),
+      };
+    } catch (e) {
+      if (e instanceof HttpError) throw e;
+      console.error('DB Error in auth.service requestPasswordResetForCurrentUser', e);
+      throw new HttpError(500, "Error interno del servidor.", "INTERNAL_ERROR");
+    }
+  }
+
+  /**
+   * HU20: confirma el código y cambia la contraseña. En cualquier fallo del
+   * código responde el mismo 400 genérico ("Código inválido o expirado.") sin
+   * distinguir si el usuario existe. En éxito invalida todas las sesiones.
+   */
+  async confirmPasswordReset(input: { identifier: string; code: string; newPassword: string }) {
+    try {
+      // Este error sí puede ser específico: no revela existencia de la cuenta.
+      if (!validateNewPassword(input.newPassword)) {
+        throw new HttpError(
+          400,
+          `La nueva contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.`,
+          "WEAK_PASSWORD",
+        );
+      }
+
+      const user = await this.repository.findUserForPasswordReset(input.identifier);
+      if (!user) throw this.invalidResetCodeError();
+
+      const token = await this.repository.findLatestPasswordResetToken(user.id);
+      if (!token) throw this.invalidResetCodeError();
+
+      // Reservar el intento de forma atómica ANTES de comparar: el UPDATE
+      // condicional (attempts < máximo AND used_at IS NULL) no devuelve fila
+      // si el token está usado o agotado, de modo que N peticiones
+      // concurrentes no pueden superar el límite de intentos leyendo un
+      // valor obsoleto de `attempts`.
+      const consumed = await this.repository.consumePasswordResetAttempt(token.id, MAX_RESET_ATTEMPTS);
+      if (!consumed) throw this.invalidResetCodeError();
+
+      const validation = validateResetToken({
+        tokenHash: consumed.tokenHash,
+        expiresAt: consumed.expiresAt,
+        usedAt: consumed.usedAt,
+        // El intento en curso ya quedó reservado en BD; se descuenta para
+        // que la validación pura no lo cuente dos veces.
+        attempts: consumed.attempts - 1,
+        now: new Date(),
+        candidateOtp: input.code,
+      });
+
+      if (validation.status !== "ok") throw this.invalidResetCodeError();
+
+      const passwordHash = await bcrypt.hash(input.newPassword, BCRYPT_COST);
+      // Marcar el token como usado primero: si la actualización fallara, el
+      // código ya no puede reutilizarse (un solo uso).
+      await this.repository.markPasswordResetTokenUsed(token.id);
+      await this.repository.updatePasswordAndInvalidateSessions(user.id, passwordHash);
+
+      return { message: "Contraseña actualizada correctamente." };
+    } catch (e) {
+      if (e instanceof HttpError) throw e;
+      console.error('DB Error in auth.service confirmPasswordReset', e);
+      throw new HttpError(500, "Error interno del servidor.", "INTERNAL_ERROR");
+    }
+  }
+
+  /**
+   * Aplica el rate limit, invalida tokens previos, crea el token nuevo y envía
+   * el correo. Si el usuario excedió el límite, no hace nada (la respuesta al
+   * cliente sigue siendo la genérica). El envío de correo nunca lanza errores.
+   *
+   * Trade-off aceptado (documentado en la revisión de HU20): el `await` del
+   * envío hace que la latencia de /request difiera entre cuentas existentes y
+   * no existentes (oráculo de timing). No se envía en segundo plano porque en
+   * Vercel serverless el trabajo posterior a la respuesta puede no ejecutarse
+   * (el correo no llegaría). Mitigación real: el rate limit corta la señal a
+   * partir del cuarto intento por usuario; una cola de correos queda como
+   * mejora futura.
+   */
+  private async issuePasswordResetToken(user: PasswordResetUser): Promise<void> {
+    const since = new Date(Date.now() - RESET_RATE_LIMIT_WINDOW_MINUTES * 60 * 1000);
+    const recentTokens = await this.repository.countRecentPasswordResetTokens(user.id, since);
+    if (recentTokens >= RESET_RATE_LIMIT_MAX_TOKENS) return;
+
+    const otp = generateOtp();
+    const expiresAt = new Date(Date.now() + OTP_EXPIRATION_MINUTES * 60 * 1000);
+
+    await this.repository.invalidateActivePasswordResetTokens(user.id);
+    await this.repository.createPasswordResetToken(user.id, hashOtp(otp), expiresAt);
+    await sendPasswordResetEmail({
+      to: user.institutionalEmail,
+      otp,
+      expiresMinutes: OTP_EXPIRATION_MINUTES,
+    });
+  }
+
+  private invalidResetCodeError() {
+    return new HttpError(400, "Código inválido o expirado.", "INVALID_RESET_CODE");
   }
 
   private signToken(input: { userId: number; studentId: number; code: string; role: AppRole; tokenVersion: number }) {

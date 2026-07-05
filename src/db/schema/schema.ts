@@ -382,6 +382,19 @@ export const announcement = pgTable("announcement", {
   isActive: boolean("is_active").notNull().default(true),
 });
 
+export const passwordResetToken = pgTable("password_reset_token", {
+  id: integer("id").generatedByDefaultAsIdentity().primaryKey(),
+  userId: integer("user_id").notNull().references(() => appUser.id),
+  // SHA-256 (hex) del OTP de 6 dígitos; nunca se guarda el OTP en claro.
+  tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+  expiresAt: timestamp("expires_at", { mode: "date", withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { mode: "date", withTimezone: true }),
+  attempts: integer("attempts").notNull().default(0),
+  createdAt: timestamp("created_at", { mode: "date", withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  idxPasswordResetTokenUser: index("idx_password_reset_token_user").on(t.userId),
+}));
+
 export const alert = pgTable("alert", {
   id: integer("id").generatedByDefaultAsIdentity().primaryKey(),
   studentId: integer("student_id").notNull().references(() => student.id),

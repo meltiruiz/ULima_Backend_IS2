@@ -50,3 +50,18 @@ export type AuthUser = {
 export type AuthUserWithPassword = AuthUser & {
   passwordHash: string;
 };
+
+/** Datos mínimos del usuario para el flujo de restablecimiento de contraseña. */
+export type PasswordResetUser = {
+  id: number;
+  institutionalEmail: string;
+};
+
+/** Estado persistido de un token de restablecimiento (fila de `password_reset_token`). */
+export type PasswordResetTokenRecord = {
+  id: number;
+  tokenHash: string;
+  expiresAt: Date;
+  usedAt: Date | null;
+  attempts: number;
+};

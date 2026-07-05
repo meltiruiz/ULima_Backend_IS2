@@ -19,4 +19,16 @@ export class AuthController {
   me(userId: number, role: AppRole) {
     return this.service.me(userId, role);
   }
+
+  requestPasswordReset(input: { identifier: string }) {
+    return this.service.requestPasswordReset(input);
+  }
+
+  confirmPasswordReset(input: { identifier: string; code: string; newPassword: string }) {
+    return this.service.confirmPasswordReset(input);
+  }
+
+  requestPasswordResetForCurrentUser(userId: number) {
+    return this.service.requestPasswordResetForCurrentUser(userId);
+  }
 }
