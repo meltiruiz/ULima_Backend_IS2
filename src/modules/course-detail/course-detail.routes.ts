@@ -4,7 +4,6 @@ import { sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { authMiddleware } from "../../shared/middleware/auth-middleware.js";
 
-const dayName = (day: number) => ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"][day - 1] ?? "Por definir";
 const splitName = (fullName: string) => {
   if (fullName.includes(",")) {
     const parts = fullName.split(",");
@@ -33,7 +32,7 @@ const splitName = (fullName: string) => {
   };
 };
 
-export const createCourseDetailRoutes = (_controller: CourseDetailController) => {
+export const createCourseDetailRoutes = (controller: CourseDetailController) => {
   const app = new Hono();
 
   // Todas las rutas de detalle de curso exponen datos académicos sensibles
@@ -142,150 +141,11 @@ export const createCourseDetailRoutes = (_controller: CourseDetailController) =>
     return c.json({ section: data.secciones.find((section) => section.idSeccion === sectionId) ?? null });
   });
 
-  app.get("/sections/:sectionId/announcements", async (c) => {
-    const sectionId = Number(c.req.param("sectionId"));
-    try {
-      const rows = await db.execute(sql`
-        select
-          a.id,
-          a.title,
-          a.message,
-          a.published_at,
-          au.code as autor_code,
-          au.full_name,
-          au.institutional_email,
-          sr.position
-        from announcement a
-        join section_representative sr on sr.id = a.section_representative_id
-        join enrollment e on e.id = sr.enrollment_id
-        join student st on st.id = e.student_id
-        join app_user au on au.id = st.user_id
-        where sr.section_id = ${sectionId}
-          and a.is_active = true
-        order by a.published_at desc
-      `) as unknown as Array<any>;
+  app.get("/sections/:sectionId/announcements", (c) => controller.getAnnouncements(c));
 
-      return c.json({
-        anuncios: rows.map((row) => ({
-          id: String(row.id),
-          idSeccion: String(sectionId),
-          titulo: row.title,
-          mensaje: row.message,
-          fecha: row.published_at?.toISOString?.() ?? String(row.published_at ?? ""),
-          autorCode: row.autor_code,
-          autor: {
-            code: row.autor_code,
-            ...splitName(row.full_name),
-            email: row.institutional_email,
-            role: row.position === 'delegate' ? 'DELEGADO' : row.position === 'subdelegate' ? 'SUBDELEGADO' : 'estudiante',
-            career_id: null,
-            currentCycle: "2026-1",
-            setupComplete: true,
-          },
-        })),
-      });
-    } catch (e) {
-      console.error(`DB Error in /sections/${sectionId}/announcements`, e);
-      return c.json({ anuncios: [] });
-    }
-  });
+  app.get("/sections/:sectionId/advising", (c) => controller.getAdvising(c));
 
-  app.get("/sections/:sectionId/advising", async (c) => {
-    const sectionId = Number(c.req.param("sectionId"));
-    try {
-      const rows = await db.execute(sql`
-        select
-          cas.id,
-          cas.course_offering_id,
-          cas.section_id,
-          cas.day_of_week,
-          cas.start_time,
-          cas.end_time,
-          cas.classroom,
-          cas.meeting_url,
-          t.teacher_code,
-          t.full_name
-        from course_advising_session cas
-        join teacher t on t.id = cas.teacher_id
-        join section sec on sec.course_offering_id = cas.course_offering_id
-        where sec.id = ${sectionId}
-          and (cas.section_id is null or cas.section_id = ${sectionId})
-        order by cas.day_of_week, cas.start_time
-      `) as unknown as Array<any>;
-
-      return c.json({
-        asesorias: rows.map((row) => ({
-          id: String(row.id),
-          courseId: String(row.course_offering_id),
-          docenteCode: row.teacher_code ?? "",
-          docente: {
-            code: row.teacher_code ?? "",
-            ...splitName(row.full_name),
-          },
-          dia: dayName(Number(row.day_of_week)),
-          inicio: row.start_time ?? "",
-          fin: row.end_time ?? "",
-          aula: row.classroom ?? "Por definir",
-          zoom: row.meeting_url ?? "",
-        })),
-      });
-    } catch (e) {
-      console.error(`DB Error in /sections/${sectionId}/advising`, e);
-      return c.json({ asesorias: [] });
-    }
-  });
-
-  app.get("/sections/:sectionId/contacts", async (c) => {
-    const sectionId = Number(c.req.param("sectionId"));
-    try {
-      const teacherRows = await db.execute(sql`
-        select t.teacher_code, t.full_name
-        from section sec
-        join teacher t on t.id = sec.teacher_id
-        where sec.id = ${sectionId}
-        limit 1
-      `) as unknown as Array<any>;
-      const rows = await db.execute(sql`
-        select
-          e.id as enrollment_id,
-          au.code,
-          au.full_name,
-          au.institutional_email,
-          s.career_id,
-          sr.position
-        from enrollment e
-        join student s on s.id = e.student_id
-        join app_user au on au.id = s.user_id
-        left join section_representative sr on sr.enrollment_id = e.id and sr.is_active = true
-        where e.section_id = ${sectionId}
-        order by au.full_name
-      `) as unknown as Array<any>;
-
-      return c.json({
-        docente: teacherRows[0]
-          ? {
-              code: teacherRows[0].teacher_code ?? "",
-              ...splitName(teacherRows[0].full_name),
-            }
-          : null,
-        alumnos: rows.map((row) => ({
-          user: {
-            code: row.code,
-            ...splitName(row.full_name),
-            email: row.institutional_email,
-            role: row.position === "delegate" ? "delegado" : row.position === "subdelegate" ? "subdelegado" : "estudiante",
-            career_id: row.career_id,
-            currentCycle: "2026-1",
-            setupComplete: true,
-          },
-          roleInSection: row.position === "delegate" ? "delegado" : row.position === "subdelegate" ? "subdelegado" : "estudiante",
-        })),
-      });
-    } catch (e) {
-      console.error(`DB Error in /sections/${sectionId}/contacts`, e);
-      return c.json({ docente: null, alumnos: [] });
-    }
-  });
+  app.get("/sections/:sectionId/contacts", (c) => controller.getContacts(c));
 
   return app;
 };
