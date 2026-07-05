@@ -236,7 +236,7 @@ export class AuthRepository {
       select count(*)::int as total
       from password_reset_token
       where user_id = ${userId}
-        and created_at >= ${since}
+        and created_at >= ${since.toISOString()}
     `) as unknown as Array<{ total: number }>;
 
     return Number(rows[0]?.total ?? 0);
@@ -255,7 +255,7 @@ export class AuthRepository {
   async createPasswordResetToken(userId: number, tokenHash: string, expiresAt: Date): Promise<void> {
     await this.database.execute(sql`
       insert into password_reset_token (user_id, token_hash, expires_at)
-      values (${userId}, ${tokenHash}, ${expiresAt})
+      values (${userId}, ${tokenHash}, ${expiresAt.toISOString()})
     `);
   }
 
