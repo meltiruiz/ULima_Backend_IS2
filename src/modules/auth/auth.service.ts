@@ -24,7 +24,8 @@ const googleClient = new OAuth2Client();
 const BCRYPT_COST = 10;
 
 // Rate limit: máximo 3 tokens de restablecimiento creados por usuario por hora.
-const RESET_RATE_LIMIT_MAX_TOKENS = 3;
+// Configurable por PASSWORD_RESET_MAX_PER_HOUR (default 3, anti-abuso).
+const RESET_RATE_LIMIT_MAX_TOKENS = config.auth.passwordResetMaxPerHour;
 const RESET_RATE_LIMIT_WINDOW_MINUTES = 60;
 
 // Mensaje genérico: nunca revela si la cuenta existe.
