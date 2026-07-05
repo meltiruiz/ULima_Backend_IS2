@@ -8,6 +8,10 @@ export const config = {
     jwtSecret: env.JWT_SECRET,
     jwtExpiresIn: env.JWT_EXPIRES_IN,
   },
+  email: {
+    resendApiKey: env.RESEND_API_KEY,
+    resendFrom: env.RESEND_FROM,
+  },
   server: {
     port: env.PORT,
     env: env.NODE_ENV,

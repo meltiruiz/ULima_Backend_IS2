@@ -13,7 +13,7 @@ Contrato REST local del backend ULima++. Mantener alineado manualmente con `ULim
 
 ## Principios Globales
 
-- Todas las rutas, salvo `GET /`, `GET /health`, `POST /auth/login` y `POST /auth/google`, usan `Authorization: Bearer <token>`. Este requisito está **enforced** por `authMiddleware` en cada módulo (incluidos `course-detail`, `grades` y `section-management`).
+- Todas las rutas, salvo `GET /`, `GET /health`, `POST /auth/login`, `POST /auth/google`, `POST /auth/password-reset/request` y `POST /auth/password-reset/confirm`, usan `Authorization: Bearer <token>`. Este requisito está **enforced** por `authMiddleware` en cada módulo (incluidos `course-detail`, `grades` y `section-management`).
 - Usuario autenticado siempre es estudiante.
 - Roles permitidos: `student`, `delegate`, `subdelegate`.
 - `teacher` nunca produce sesión.
@@ -48,6 +48,15 @@ Contrato REST local del backend ULima++. Mantener alineado manualmente con `ULim
   - Response: `{ "user": User }`
 - `POST /auth/logout`
   - Response: `{ "message": "Session closed" }`
+- `POST /auth/password-reset/request` (público)
+  - Request: `{ "identifier": "string" }` (código de alumno o correo institucional)
+  - Response (siempre `200`, exista o no la cuenta): `{ "message": "Si la cuenta existe, enviamos un código a tu correo institucional." }`
+- `POST /auth/password-reset/confirm` (público)
+  - Request: `{ "identifier": "string", "code": "string", "newPassword": "string" }`
+  - Response `200`: `{ "message": "Contraseña actualizada correctamente." }`
+  - Errores: `400 WEAK_PASSWORD` (menos de 8 caracteres), `400 INVALID_RESET_CODE` ("Código inválido o expirado.", genérico a propósito)
+- `POST /auth/password-reset/request-me` (Bearer token)
+  - Response `200`: `{ "message": "Enviamos un código a tu correo institucional.", "email": "2023****@aloe.ulima.edu.pe" }`
 
 `User` mínimo:
 

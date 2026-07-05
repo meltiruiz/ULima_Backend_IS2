@@ -41,3 +41,4 @@ coverage/
 # Temporary files
 *.tmp
 *.temp
+!drizzle/0003_password_reset_token.sql

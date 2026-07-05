@@ -12,6 +12,11 @@ const envSchema = z.object({
   // Lista de orígenes permitidos para CORS, separados por coma.
   // Si no se define, se mantiene comportamiento permisivo (*) — restringir en producción.
   CORS_ORIGINS: z.string().optional(),
+  // Clave de API de Resend para enviar correos transaccionales (restablecer contraseña).
+  // Si está vacía y NODE_ENV !== 'production', el OTP se loguea en consola con prefijo [DEV ONLY].
+  RESEND_API_KEY: z.string().optional().default(""),
+  // Remitente de los correos enviados con Resend, formato "Nombre <correo@dominio>".
+  RESEND_FROM: z.string().optional().default("ULima+ <onboarding@resend.dev>"),
 });
 
 const parsed = envSchema.safeParse(process.env);

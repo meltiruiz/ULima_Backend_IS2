@@ -1,6 +1,14 @@
 import type { db } from "../../db/index.js";
 import { sql } from "drizzle-orm";
-import type { AppRole, AuthCurrentCourse, AuthSpecialty, AuthUser, AuthUserWithPassword } from "./auth.types.js";
+import type {
+  AppRole,
+  AuthCurrentCourse,
+  AuthSpecialty,
+  AuthUser,
+  AuthUserWithPassword,
+  PasswordResetTokenRecord,
+  PasswordResetUser,
+} from "./auth.types.js";
 
 type UserRow = {
   id: number;
@@ -20,6 +28,19 @@ type SpecialtyRow = {
   specialty_id: number;
   name: string;
   selection_type: "primary" | "interest";
+};
+
+type PasswordResetUserRow = {
+  id: number;
+  institutional_email: string;
+};
+
+type PasswordResetTokenRow = {
+  id: number;
+  token_hash: string;
+  expires_at: string | Date;
+  used_at: string | Date | null;
+  attempts: number;
 };
 
 type CurrentCourseRow = {
@@ -179,6 +200,128 @@ export class AuthRepository {
 
     const role = mapRole(rows[0]?.position);
     return role === "student" ? null : { position: role };
+  }
+
+  /** Busca la cuenta por código de alumno O correo institucional (flujo password reset). */
+  async findUserForPasswordReset(identifier: string): Promise<PasswordResetUser | null> {
+    const value = identifier.trim();
+    const rows = await this.database.execute(sql`
+      select au.id, au.institutional_email
+      from app_user au
+      where au.code = ${value}
+         or au.institutional_email = ${value}
+      limit 1
+    `) as unknown as PasswordResetUserRow[];
+
+    const row = rows[0];
+    return row ? { id: Number(row.id), institutionalEmail: row.institutional_email } : null;
+  }
+
+  /** Igual que `findUserForPasswordReset`, pero por id de usuario (JWT). */
+  async findUserForPasswordResetById(userId: number): Promise<PasswordResetUser | null> {
+    const rows = await this.database.execute(sql`
+      select au.id, au.institutional_email
+      from app_user au
+      where au.id = ${userId}
+      limit 1
+    `) as unknown as PasswordResetUserRow[];
+
+    const row = rows[0];
+    return row ? { id: Number(row.id), institutionalEmail: row.institutional_email } : null;
+  }
+
+  /** Cuenta tokens de restablecimiento creados desde `since` (rate limit por usuario). */
+  async countRecentPasswordResetTokens(userId: number, since: Date): Promise<number> {
+    const rows = await this.database.execute(sql`
+      select count(*)::int as total
+      from password_reset_token
+      where user_id = ${userId}
+        and created_at >= ${since}
+    `) as unknown as Array<{ total: number }>;
+
+    return Number(rows[0]?.total ?? 0);
+  }
+
+  /** Invalida (marca como usados) todos los tokens activos del usuario. */
+  async invalidateActivePasswordResetTokens(userId: number): Promise<void> {
+    await this.database.execute(sql`
+      update password_reset_token
+      set used_at = now()
+      where user_id = ${userId}
+        and used_at is null
+    `);
+  }
+
+  async createPasswordResetToken(userId: number, tokenHash: string, expiresAt: Date): Promise<void> {
+    await this.database.execute(sql`
+      insert into password_reset_token (user_id, token_hash, expires_at)
+      values (${userId}, ${tokenHash}, ${expiresAt})
+    `);
+  }
+
+  /** Devuelve el token de restablecimiento más reciente del usuario (usado o no). */
+  async findLatestPasswordResetToken(userId: number): Promise<PasswordResetTokenRecord | null> {
+    const rows = await this.database.execute(sql`
+      select id, token_hash, expires_at, used_at, attempts
+      from password_reset_token
+      where user_id = ${userId}
+      order by created_at desc, id desc
+      limit 1
+    `) as unknown as PasswordResetTokenRow[];
+
+    const row = rows[0];
+    if (!row) return null;
+
+    return {
+      id: Number(row.id),
+      tokenHash: row.token_hash,
+      expiresAt: new Date(row.expires_at),
+      usedAt: row.used_at == null ? null : new Date(row.used_at),
+      attempts: Number(row.attempts),
+    };
+  }
+
+  /**
+   * Reserva atómicamente un intento de validación (attempts + 1). Devuelve el
+   * registro actualizado, o null si el token ya fue usado o agotó sus
+   * intentos: el UPDATE condicional garantiza el límite bajo concurrencia.
+   */
+  async consumePasswordResetAttempt(tokenId: number, maxAttempts: number): Promise<PasswordResetTokenRecord | null> {
+    const rows = await this.database.execute(sql`
+      update password_reset_token
+      set attempts = attempts + 1
+      where id = ${tokenId} and used_at is null and attempts < ${maxAttempts}
+      returning id, token_hash, expires_at, used_at, attempts
+    `) as unknown as PasswordResetTokenRow[];
+
+    const row = rows[0];
+    if (!row) return null;
+
+    return {
+      id: Number(row.id),
+      tokenHash: row.token_hash,
+      expiresAt: new Date(row.expires_at),
+      usedAt: row.used_at == null ? null : new Date(row.used_at),
+      attempts: Number(row.attempts),
+    };
+  }
+
+  async markPasswordResetTokenUsed(tokenId: number): Promise<void> {
+    await this.database.execute(sql`
+      update password_reset_token
+      set used_at = now()
+      where id = ${tokenId}
+    `);
+  }
+
+  /** Actualiza el hash de contraseña e invalida todas las sesiones (token_version + 1). */
+  async updatePasswordAndInvalidateSessions(userId: number, passwordHash: string): Promise<void> {
+    await this.database.execute(sql`
+      update app_user
+      set password_hash = ${passwordHash},
+          token_version = token_version + 1
+      where id = ${userId}
+    `);
   }
 
   private async buildUser(row: UserRow, role: AppRole): Promise<AuthUser> {

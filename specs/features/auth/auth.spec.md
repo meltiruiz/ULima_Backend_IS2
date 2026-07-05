@@ -15,6 +15,7 @@ targets:
 | --- | --- |
 | US01 | Iniciar sesión con código y contraseña. |
 | US02 | Cerrar sesión. |
+| HU20 | Restablecer la contraseña con un código OTP enviado al correo institucional. |
 
 ## Business Rules
 
@@ -87,6 +88,24 @@ targets:
 - En `POST /auth/google`, tras verificar el `idToken` y ubicar al usuario por `institutional_email`, se **guarda el `sub` de Google** (ID único de la cuenta) en `app_user.google_id`.
 - La columna `app_user.google_id` (`varchar(255)`, nullable) existe en la BD.
 - El guardado es idempotente (solo escribe si cambió) y no bloquea el login si el usuario ya estaba vinculado.
+
+### BR-AUTH-11: Restablecimiento de contraseña (HU20)
+
+- Tabla `password_reset_token`: `id`, `user_id` (FK `app_user`), `token_hash` (SHA-256 hex del OTP, `varchar(64)`), `expires_at` (timestamptz), `used_at` (timestamptz, null), `attempts` (default 0), `created_at` (timestamptz, default now). Índice por `user_id`.
+- OTP de 6 dígitos generado con crypto seguro; solo se persiste su hash SHA-256.
+  `[@test] ../../../test/password-reset.logic.test.ts`
+- Política: expiración 30 minutos, máximo 5 intentos, un solo uso.
+  `[@test] ../../../test/password-reset.logic.test.ts`
+- La nueva contraseña debe tener mínimo 8 caracteres (`validateNewPassword`).
+  `[@test] ../../../test/password-reset.logic.test.ts`
+- `POST /auth/password-reset/request` es público y **siempre** responde `200` con el mensaje genérico "Si la cuenta existe, enviamos un código a tu correo institucional.", exista o no la cuenta (no permite enumeración de usuarios).
+- Rate limit: máximo 3 tokens creados por usuario en la última hora; al exceder se responde el mismo `200` genérico sin enviar correo.
+- Al emitir un token nuevo se invalidan (marcan usados) los tokens activos previos del usuario.
+- `POST /auth/password-reset/confirm` responde `400 INVALID_RESET_CODE` con el mensaje genérico "Código inválido o expirado." ante mismatch/expirado/usado/intentos agotados o cuenta inexistente, sin distinguir el caso. Cada intento fallido incrementa `attempts` (persistido).
+- En éxito: se hashea la nueva contraseña con `bcryptjs` (costo 10, igual que los hashes existentes), se actualiza `password_hash`, se incrementa `token_version` (cierra todas las sesiones) y se marca el token como usado.
+- `POST /auth/password-reset/request-me` requiere JWT y responde el correo institucional enmascarado (ej. `2023****@aloe.ulima.edu.pe`).
+  `[@test] ../../../test/password-reset.logic.test.ts`
+- Envío de correo vía Resend (`src/shared/email/resend-client.ts`, `RESEND_API_KEY` / `RESEND_FROM`). Si `RESEND_API_KEY` está vacía y `NODE_ENV != production`, el OTP se loguea en consola con prefijo `[DEV ONLY]`. Un fallo de envío se loguea del lado servidor y **nunca** se propaga al cliente.
 
 ## Endpoints
 
@@ -167,6 +186,44 @@ Cierra la sesión del lado del frontend.
   ```json
   {
     "message": "Session closed"
+  }
+  ```
+
+### POST /auth/password-reset/request
+
+Solicita un código OTP de restablecimiento (público).
+
+- **Auth**: None (público)
+- **Request body**: `{ "identifier": "20201234" }` (código de alumno o correo institucional)
+- **Response** `200 OK` (siempre, exista o no la cuenta):
+  ```json
+  { "message": "Si la cuenta existe, enviamos un código a tu correo institucional." }
+  ```
+
+### POST /auth/password-reset/confirm
+
+Confirma el OTP y establece la nueva contraseña (público).
+
+- **Auth**: None (público)
+- **Request body**: `{ "identifier": "20201234", "code": "123456", "newPassword": "nuevaClave123" }`
+- **Response** `200 OK`:
+  ```json
+  { "message": "Contraseña actualizada correctamente." }
+  ```
+- **Errors**:
+  - `400` `WEAK_PASSWORD`: La nueva contraseña tiene menos de 8 caracteres
+  - `400` `INVALID_RESET_CODE`: "Código inválido o expirado." (mismatch, expirado, usado, intentos agotados o cuenta inexistente — indistinguibles a propósito)
+
+### POST /auth/password-reset/request-me
+
+Solicita el código para el usuario autenticado (envía directo a su correo).
+
+- **Auth**: Bearer token
+- **Response** `200 OK`:
+  ```json
+  {
+    "message": "Enviamos un código a tu correo institucional.",
+    "email": "2023****@aloe.ulima.edu.pe"
   }
   ```
 
