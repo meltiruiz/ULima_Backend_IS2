@@ -47,6 +47,16 @@ app.get("/health", (c) => {
   return c.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+// Expone el commit desplegado (Vercel inyecta VERCEL_GIT_COMMIT_SHA) para
+// detectar de un vistazo si producción quedó detrás de main.
+app.get("/version", (c) => {
+  return c.json({
+    commit: process.env.VERCEL_GIT_COMMIT_SHA ?? "local",
+    ref: process.env.VERCEL_GIT_COMMIT_REF ?? null,
+    deployment: process.env.VERCEL_DEPLOYMENT_ID ?? null,
+  });
+});
+
 // --- Modules routes ---
 registerModules(app);
 
