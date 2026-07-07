@@ -1,13 +1,16 @@
 import { Hono } from "hono";
 import type { ScheduleController } from "./schedule.controller.js";
-import { authMiddleware } from "../../shared/middleware/auth-middleware.js";
+import { authMiddleware, requireRole, STUDENT_ROLES } from "../../shared/middleware/auth-middleware.js";
 
 export const createScheduleRoutes = (controller: ScheduleController) => {
   const app = new Hono<{ Variables: { studentId: number } }>();
 
-  app.get("/me/sessions", authMiddleware, (c) => controller.getSessions(c));
-  app.get("/me/assessments", authMiddleware, (c) => controller.getAssessments(c));
-  app.get("/me/load", authMiddleware, (c) => controller.getWeeklyLoad(c));
+  app.use("*", authMiddleware);
+  app.use("*", requireRole(...STUDENT_ROLES));
+
+  app.get("/me/sessions", (c) => controller.getSessions(c));
+  app.get("/me/assessments", (c) => controller.getAssessments(c));
+  app.get("/me/load", (c) => controller.getWeeklyLoad(c));
 
   return app;
 };

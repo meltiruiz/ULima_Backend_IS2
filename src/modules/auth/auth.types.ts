@@ -1,7 +1,32 @@
 export type AppRole =
   | "student"
   | "delegate"
-  | "subdelegate";
+  | "subdelegate"
+  | "teacher";
+
+/** Etiqueta docente derivada de qué columna de `section` referencia al teacher. */
+export type TeacherLabel = "Profesor" | "Jefe de Práctica";
+
+/** Usuario docente (HU18): sin `studentId`; su JWT lleva `teacherId`. */
+export type TeacherAuthUser = {
+  id: number;
+  teacherId: number;
+  code: string;
+  tokenVersion: number;
+  fullName: string;
+  firstName: string;
+  lastName: string;
+  institutionalEmail: string;
+  email: string;
+  role: "teacher";
+  teacherLabel: TeacherLabel;
+  // Los docentes no pasan por el setup de carrera; fijo para el routing del frontend.
+  setupComplete: true;
+};
+
+export type TeacherAuthUserWithPassword = TeacherAuthUser & {
+  passwordHash: string;
+};
 
 export type AuthSpecialty = {
   specialtyId: number;

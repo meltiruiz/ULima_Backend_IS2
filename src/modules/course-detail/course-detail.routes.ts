@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { CourseDetailController } from "./course-detail.controller.js";
 import { sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
-import { authMiddleware } from "../../shared/middleware/auth-middleware.js";
+import { authMiddleware, requireRole, STUDENT_ROLES } from "../../shared/middleware/auth-middleware.js";
 
 const dayName = (day: number) => ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"][day - 1] ?? "Por definir";
 const splitName = (fullName: string) => {
@@ -37,8 +37,9 @@ export const createCourseDetailRoutes = (_controller: CourseDetailController) =>
   const app = new Hono();
 
   // Todas las rutas de detalle de curso exponen datos académicos sensibles
-  // (secciones, docentes, matrículas, contactos): requieren JWT válido.
+  // (secciones, docentes, matrículas, contactos): requieren JWT válido de alumno.
   app.use("*", authMiddleware);
+  app.use("*", requireRole(...STUDENT_ROLES));
 
   app.get("/sections", async (c) => {
     try {
@@ -203,14 +204,23 @@ export const createCourseDetailRoutes = (_controller: CourseDetailController) =>
           cas.end_time,
           cas.classroom,
           cas.meeting_url,
+          cas.kind,
+          cas.session_date::text as session_date,
           t.teacher_code,
-          t.full_name
+          t.full_name,
+          -- HU18: etiqueta del dictante según sea el titular o el JP de la sección.
+          case when cas.teacher_id = sec.jp_id then 'JP' else 'Profesor' end as dictante_rol,
+          (select count(*)::int from advising_rsvp r where r.advising_session_id = cas.id) as asistentes
         from course_advising_session cas
         join teacher t on t.id = cas.teacher_id
         join section sec on sec.course_offering_id = cas.course_offering_id
         where sec.id = ${sectionId}
           and (cas.section_id is null or cas.section_id = ${sectionId})
-        order by cas.day_of_week, cas.start_time
+          -- No listar extras cuya fecha ya pasó.
+          and (cas.kind = 'recurring' or cas.session_date >= current_date)
+        order by
+          case when cas.kind = 'extra' then 0 else 1 end,
+          cas.session_date nulls last, cas.day_of_week, cas.start_time
       `) as unknown as Array<any>;
 
       return c.json({
@@ -227,6 +237,11 @@ export const createCourseDetailRoutes = (_controller: CourseDetailController) =>
           fin: row.end_time ?? "",
           aula: row.classroom ?? "Por definir",
           zoom: row.meeting_url ?? "",
+          // HU18: nuevos campos (los previos no cambian → APKs viejos siguen funcionando).
+          kind: row.kind ?? "recurring",
+          fecha: row.session_date ?? null,
+          dictanteRol: row.dictante_rol ?? "Profesor",
+          asistentes: Number(row.asistentes ?? 0),
         })),
       });
     } catch (e) {
@@ -242,6 +257,14 @@ export const createCourseDetailRoutes = (_controller: CourseDetailController) =>
         select t.teacher_code, t.full_name
         from section sec
         join teacher t on t.id = sec.teacher_id
+        where sec.id = ${sectionId}
+        limit 1
+      `) as unknown as Array<any>;
+      // HU18: jefe de práctica de la sección (0 o 1).
+      const jpRows = await db.execute(sql`
+        select t.teacher_code, t.full_name
+        from section sec
+        join teacher t on t.id = sec.jp_id
         where sec.id = ${sectionId}
         limit 1
       `) as unknown as Array<any>;
@@ -266,6 +289,13 @@ export const createCourseDetailRoutes = (_controller: CourseDetailController) =>
           ? {
               code: teacherRows[0].teacher_code ?? "",
               ...splitName(teacherRows[0].full_name),
+            }
+          : null,
+        // HU18: grupo "Jefe de Práctica" (entre Docente y Alumnos). null si la sección no tiene JP.
+        jefePractica: jpRows[0]
+          ? {
+              code: jpRows[0].teacher_code ?? "",
+              ...splitName(jpRows[0].full_name),
             }
           : null,
         alumnos: rows.map((row) => ({

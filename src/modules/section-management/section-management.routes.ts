@@ -2,13 +2,14 @@ import { Hono } from "hono";
 import type { SectionManagementController } from "./section-management.controller.js";
 import { sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
-import { authMiddleware } from "../../shared/middleware/auth-middleware.js";
+import { authMiddleware, requireRole, STUDENT_ROLES } from "../../shared/middleware/auth-middleware.js";
 
 export const createSectionManagementRoutes = (_controller: SectionManagementController) => {
   const app = new Hono();
 
-  // Expone representantes (delegados/subdelegados) por sección: requiere JWT válido.
+  // Expone representantes (delegados/subdelegados) por sección: requiere JWT válido de alumno.
   app.use("*", authMiddleware);
+  app.use("*", requireRole(...STUDENT_ROLES));
 
   app.get("/representatives", async (c) => {
     try {

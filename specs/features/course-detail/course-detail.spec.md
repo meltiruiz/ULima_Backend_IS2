@@ -22,6 +22,16 @@ Endpoints de solo lectura que exponen el detalle académico de cursos/secciones.
 ### BR-COURSE-DETAIL-02: Sub-petición interna autenticada
 - `GET /course-detail/sections/:sectionId` resuelve su data reutilizando `GET /course-detail/sections` mediante una sub-petición interna; ésta debe **reenviar el header `Authorization`** para no fallar el `authMiddleware`.
 
+### BR-COURSE-DETAIL-03: Solo roles de alumno (HU18)
+- Todo el módulo agrega `requireRole('student','delegate','subdelegate')`: un token docente recibe `403 FORBIDDEN` (las vistas de docente viven en `/advising/me/*`).
+
+### BR-COURSE-DETAIL-04: Asesorías con extras, dictante y asistentes (HU18)
+- `GET /course-detail/sections/:sectionId/advising` agrega por item: `kind` (`recurring`/`extra`), `fecha` (`YYYY-MM-DD`, solo extras), `dictanteRol` (`"Profesor"` si `cas.teacher_id = sec.teacher_id` de la sección; `"JP"` si `= sec.jp_id`), `asistentes` (COUNT de `advising_rsvp`). Campos existentes intactos (compatibilidad con APKs viejos).
+- Las extras con `session_date` anterior a hoy no se listan.
+
+### BR-COURSE-DETAIL-05: JP en contactos (HU18)
+- `GET /course-detail/sections/:sectionId/contacts` agrega la clave top-level `jefePractica` (`{ code, lastName, firstName }` o `null`), derivada de `section.jp_id`.
+
 ## Endpoints
 
 Todos bajo `Authorization: Bearer <token>` (ver detalle de payloads en `docs/specs/api-contracts.md`):
