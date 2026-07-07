@@ -26,7 +26,7 @@ Para retomar el flujo oficial de Drizzle se hizo un **re-baseline**. Estado:
 1. Editas `src/db/schema/schema.ts`.
 2. `bun run db:generate` → crea `drizzle/000N_nombre.sql` + actualiza el meta.
 3. Revisas el SQL en el PR (que siga siendo aditivo; nada destructivo).
-4. Con backup y en datos móviles: `bun run db:migrate` → aplica y registra en `__drizzle_migrations`.
+4. Con backup y en datos móviles: `bun run db:migrate` → aplica y registra en `__drizzle_migrations`. (Usa el migrador de `drizzle-orm` vía `src/db/migrate.ts`, no el CLI `drizzle-kit migrate`, que trata como error el NOTICE inofensivo `relation "__drizzle_migrations" already exists`.)
 5. `db:push` sigue **prohibido** siempre (puede generar DROPs).
 
 Mientras la BD no esté sellada, sigue vigente el protocolo manual de abajo (`db:apply`).
