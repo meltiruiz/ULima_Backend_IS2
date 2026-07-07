@@ -7,9 +7,31 @@ Estado real auditado el 2026-07-05 y protocolo vigente hasta el fin del ciclo 20
 - La BD productiva (PostgreSQL 18 en AWS RDS) **coincide con `src/db/schema/schema.ts`**: 28/28 tablas tras aplicar la 0003, sin tablas sobrantes ni faltantes.
 - La tabla `__drizzle_migrations` **no existe** en la BD: ninguna migración se aplicó nunca vía `drizzle-kit migrate`; históricamente todo se aplicó a mano.
 - El journal (`drizzle/meta/_journal.json`) registra las entradas 0000 y 0002 **cuyos archivos SQL no existen** en `drizzle/`; el snapshot 0000 está obsoleto (describe tablas que nunca llegaron a la BD final). El journal es registro histórico, no fuente de verdad.
-- Consecuencia: `drizzle-kit generate` (diff automático) y `drizzle-kit migrate` producirían resultados incorrectos o destructivos. **No usarlos.**
+- Consecuencia (histórica): `drizzle-kit generate` (diff automático) y `drizzle-kit migrate` producían resultados incorrectos o destructivos.
 
-## Protocolo vigente (hasta re-baseline post-demo)
+## Re-baseline de Drizzle (TT04 — 2026-07-07)
+
+Para retomar el flujo oficial de Drizzle se hizo un **re-baseline**. Estado:
+
+- ✅ **Parte local (hecha, sin tocar la BD, reversible por git)**: se descartó el meta roto (journal con 0000/0002 sin SQL, snapshot 0000 obsoleto) y los `.sql` sueltos, y se regeneró desde `schema.ts` un único **`drizzle/0000_baseline.sql`** con `meta/_journal.json` y `meta/0000_snapshot.json` frescos. Verificado **sin drift**: `bun run db:generate` dice "No schema changes". El baseline contiene las **29 tablas** reales (incluye `advising_rsvp` de HU18). `bun run build` y `bun test` (54) en verde.
+- ⏳ **Parte en la BD (PENDIENTE — post-demo, requiere datos móviles)**: la BD viva ya tiene todo el esquema del baseline, así que **NO se re-ejecuta** ese SQL. Solo hay que **sellarlo** como aplicado:
+  ```bash
+  bun run db:stamp-baseline            # dry-run: muestra el baseline y su hash
+  bun run db:stamp-baseline -- --apply # crea drizzle.__drizzle_migrations y registra el baseline
+  ```
+  Drizzle decide qué aplicar por `created_at` (= `when` del journal); tras sellar, `db:migrate` omite el baseline y aplica solo lo nuevo.
+
+### Flujo oficial DESPUÉS de sellar (reemplaza al SQL manual)
+
+1. Editas `src/db/schema/schema.ts`.
+2. `bun run db:generate` → crea `drizzle/000N_nombre.sql` + actualiza el meta.
+3. Revisas el SQL en el PR (que siga siendo aditivo; nada destructivo).
+4. Con backup y en datos móviles: `bun run db:migrate` → aplica y registra en `__drizzle_migrations`. (Usa el migrador de `drizzle-orm` vía `src/db/migrate.ts`, no el CLI `drizzle-kit migrate`, que trata como error el NOTICE inofensivo `relation "__drizzle_migrations" already exists`.)
+5. `db:push` sigue **prohibido** siempre (puede generar DROPs).
+
+Mientras la BD no esté sellada, sigue vigente el protocolo manual de abajo (`db:apply`).
+
+## Protocolo manual (interino, hasta sellar el baseline)
 
 1. **`drizzle-kit generate`/`migrate` congelados. `db:push` prohibido siempre** (diffea contra un snapshot obsoleto y puede generar DROPs de objetos reales).
 2. Todo cambio de BD = **SQL aditivo escrito a mano**, numerado secuencialmente (`drizzle/000N_nombre.sql`), **dentro del PR** que lo necesita, con `IF NOT EXISTS` donde aplique. Solo `CREATE TABLE`, `ADD COLUMN` (nullable o con default) y `CREATE INDEX`; nada destructivo.
@@ -24,9 +46,9 @@ Estado real auditado el 2026-07-05 y protocolo vigente hasta el fin del ciclo 20
 |---|---|---|---|---|---|
 | 0001 | `0001_student_specialty_setup_completed.sql` | `student.specialty_setup_completed` | (histórico, junio 2026) | equipo | columna existe en BD ✔ |
 | 0003 | `0003_password_reset_token.sql` | Tabla `password_reset_token` + índice + FK (HU20) | 2026-07-05 | Jeff | `to_regclass` ✔, 7 columnas ✔, índice ✔, FK ✔, smoke test local ✔. Backup previo con `pg_dump` ✔ |
-| 0004 | `0004_advising_teacher_role.sql` | HU18: `teacher.user_id`; `section.jp_id` + CHECK + índice único parcial `uq_section_jp`; enum `advising_kind`; `course_advising_session.kind/session_date/capacity` + checks; **re-scope de `uq_course_advising_session_course/section` a `kind='recurring'`** + nuevo `uq_course_advising_session_extra`; tabla `advising_rsvp` + índice | **PENDIENTE** (aplicar con backup, en transacción, antes del deploy de HU18) | — | — |
+| 0004 | `0004_advising_teacher_role.sql` | HU18: `teacher.user_id`; `section.jp_id` + CHECK + índice único parcial `uq_section_jp`; enum `advising_kind`; `course_advising_session.kind/session_date/capacity` + checks; **re-scope de `uq_course_advising_session_course/section` a `kind='recurring'`** + nuevo `uq_course_advising_session_extra`; tabla `advising_rsvp` + índice | 2026-07-06 | Jeff | Aplicada con `db:apply` + backup; smoke test de login docente/JP en prod ✔ |
 
-> Nota: los números 0000 y 0002 del journal corresponden a archivos que ya no existen; no se reutilizan esos números para evitar ambigüedad.
+> Nota histórica: el journal viejo listaba 0000/0002 sin SQL y 0001/0003/0004 sueltos. Tras el re-baseline (2026-07-07) el journal tiene una sola entrada `0000_baseline` que representa TODO el esquema real; los `.sql` 0001/0003/0004 quedan en el historial de git. Los cambios futuros usan `db:generate` (numeración nueva 0001, 0002, …).
 
 ### Aplicación de la 0004 (runbook)
 
