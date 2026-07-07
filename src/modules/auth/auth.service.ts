@@ -24,7 +24,8 @@ const googleClient = new OAuth2Client();
 const BCRYPT_COST = 10;
 
 // Rate limit: máximo 3 tokens de restablecimiento creados por usuario por hora.
-const RESET_RATE_LIMIT_MAX_TOKENS = 3;
+// Configurable por PASSWORD_RESET_MAX_PER_HOUR (default 3, anti-abuso).
+const RESET_RATE_LIMIT_MAX_TOKENS = config.auth.passwordResetMaxPerHour;
 const RESET_RATE_LIMIT_WINDOW_MINUTES = 60;
 
 // Mensaje genérico: nunca revela si la cuenta existe.
@@ -39,7 +40,13 @@ export class AuthService {
   async login(input: { code: string; password: string }) {
     try {
       const user = await this.repository.findByCodeWithPassword(input.code);
-      if (!user) throw new HttpError(401, "Código no encontrado en la base de datos.", "USER_NOT_FOUND");
+
+      // HU18: si el código no es de un alumno, puede ser de un docente. Un
+      // `app_user` es de alumno O de docente, nunca ambos, así que solo se
+      // intenta el camino docente cuando no hay perfil de alumno.
+      if (!user) {
+        return await this.loginTeacher(input);
+      }
 
       const passwordMatches = await bcrypt.compare(input.password, user.passwordHash);
       if (!passwordMatches) throw new HttpError(401, "Contraseña incorrecta.", "INVALID_PASSWORD");
@@ -74,6 +81,37 @@ export class AuthService {
       console.error('DB Error in auth.service login', e);
       throw new HttpError(500, "Error interno del servidor.", "INTERNAL_ERROR");
     }
+  }
+
+  /**
+   * HU18: login docente (profesor/JP). No exige matrícula ni consulta
+   * representación; firma un JWT con `teacherId` y sin `studentId`. Se llama solo
+   * cuando el código no corresponde a un alumno; si tampoco es docente → 401.
+   */
+  private async loginTeacher(input: { code: string; password: string }) {
+    const teacher = await this.repository.findTeacherByCodeWithPassword(input.code);
+    if (!teacher) throw new HttpError(401, "Código no encontrado en la base de datos.", "USER_NOT_FOUND");
+
+    const passwordMatches = await bcrypt.compare(input.password, teacher.passwordHash);
+    if (!passwordMatches) throw new HttpError(401, "Contraseña incorrecta.", "INVALID_PASSWORD");
+
+    const newTokenVersion = await this.repository.incrementTokenVersion(teacher.id);
+
+    const safeTeacher = { ...teacher, tokenVersion: newTokenVersion };
+    delete (safeTeacher as { passwordHash?: string }).passwordHash;
+
+    return {
+      token: this.signToken({
+        userId: safeTeacher.id,
+        teacherId: safeTeacher.teacherId,
+        code: safeTeacher.code,
+        role: "teacher",
+        tokenVersion: newTokenVersion,
+      }),
+      tokenType: "Bearer",
+      expiresIn: config.auth.jwtExpiresIn,
+      user: safeTeacher,
+    };
   }
 
   async loginWithGoogle(input: { idToken: string }) {
@@ -140,7 +178,10 @@ export class AuthService {
 
   async me(userId: number, role: AppRole) {
     try {
-      const user = await this.repository.findById(userId, role);
+      // HU18: los docentes tienen su propio shape (sin datos de alumno).
+      const user = role === "teacher"
+        ? await this.repository.findTeacherById(userId)
+        : await this.repository.findById(userId, role);
       if (!user) throw new HttpError(404, "Usuario no encontrado.", "USER_NOT_FOUND");
       return { user };
     } catch (e) {
@@ -282,11 +323,14 @@ export class AuthService {
     return new HttpError(400, "Código inválido o expirado.", "INVALID_RESET_CODE");
   }
 
-  private signToken(input: { userId: number; studentId: number; code: string; role: AppRole; tokenVersion: number }) {
+  private signToken(input: { userId: number; code: string; role: AppRole; tokenVersion: number; studentId?: number; teacherId?: number }) {
     return jwt.sign(
       {
         sub: input.userId,
-        studentId: input.studentId,
+        // Un token es de alumno (studentId) o de docente (teacherId), nunca
+        // ambos: se emite solo la claim presente.
+        ...(input.studentId != null ? { studentId: input.studentId } : {}),
+        ...(input.teacherId != null ? { teacherId: input.teacherId } : {}),
         code: input.code,
         role: input.role,
         tokenVersion: input.tokenVersion,

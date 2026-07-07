@@ -16,7 +16,17 @@ const envSchema = z.object({
   // Si está vacía y NODE_ENV !== 'production', el OTP se loguea en consola con prefijo [DEV ONLY].
   RESEND_API_KEY: z.string().optional().default(""),
   // Remitente de los correos enviados con Resend, formato "Nombre <correo@dominio>".
-  RESEND_FROM: z.string().optional().default("ULima+ <onboarding@resend.dev>"),
+  // Default = dominio verificado del proyecto (DKIM/SPF/DMARC en mail.grupo5app.lat):
+  // así, aun si RESEND_FROM no está seteada en algún entorno, NO se envía desde
+  // onboarding@resend.dev (Gmail lo mira con más sospecha). En Vercel debe estar
+  // igualmente seteada RESEND_FROM con este mismo valor.
+  RESEND_FROM: z.string().optional().default("ULima+ <no-reply@mail.grupo5app.lat>"),
+  // Máximo de códigos de restablecimiento por usuario por hora. Default 3
+  // (anti-abuso); subirlo solo temporalmente en períodos de prueba/QA.
+  PASSWORD_RESET_MAX_PER_HOUR: z.string().optional().transform((v) => {
+    const n = parseInt(v ?? "3", 10);
+    return Number.isInteger(n) && n > 0 ? n : 3;
+  }),
 });
 
 const parsed = envSchema.safeParse(process.env);

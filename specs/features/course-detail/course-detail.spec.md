@@ -22,18 +22,15 @@ Endpoints de solo lectura que exponen el detalle académico de cursos/secciones.
 ### BR-COURSE-DETAIL-02: Sub-petición interna autenticada
 - `GET /course-detail/sections/:sectionId` resuelve su data reutilizando `GET /course-detail/sections` mediante una sub-petición interna; ésta debe **reenviar el header `Authorization`** para no fallar el `authMiddleware`.
 
-### BR-COURSE-DETAIL-03: Implementacion en capas para tabs de detalle
-- Los tabs `announcements`, `advising` y `contacts` deben mantener sus rutas publicas actuales, pero su implementacion debe estar distribuida en `routes -> controller -> service -> repository`.
-- `course-detail.routes.ts` solo define el endpoint y delega al controller.
-- `course-detail.controller.ts` valida `sectionId` con `sectionIdParamSchema`.
-- `course-detail.service.ts` transforma las filas de base de datos al contrato que consume Flutter.
-- `course-detail.repository.ts` contiene las consultas SQL a la base de datos.
+### BR-COURSE-DETAIL-03: Solo roles de alumno (HU18)
+- Todo el módulo agrega `requireRole('student','delegate','subdelegate')`: un token docente recibe `403 FORBIDDEN` (las vistas de docente viven en `/advising/me/*`).
 
-### BR-COURSE-DETAIL-04: Anuncios academicos de seccion
-- `GET /course-detail/sections/:sectionId/announcements` obtiene anuncios desde la tabla `announcement`, asociados al delegado/subdelegado mediante `section_representative`.
-- Solo se devuelven anuncios activos (`announcement.is_active = true`) de la seccion solicitada.
-- La lista debe venir ordenada por fecha de publicacion descendente (`published_at desc`), del anuncio mas reciente al mas antiguo.
-- Si no hay anuncios, el backend responde `anuncios: []`; el frontend es responsable de mostrar `Aún no hay publicaciones`.
+### BR-COURSE-DETAIL-04: Asesorías con extras, dictante y asistentes (HU18)
+- `GET /course-detail/sections/:sectionId/advising` agrega por item: `kind` (`recurring`/`extra`), `fecha` (`YYYY-MM-DD`, solo extras), `dictanteRol` (`"Profesor"` si `cas.teacher_id = sec.teacher_id` de la sección; `"JP"` si `= sec.jp_id`), `asistentes` (COUNT de `advising_rsvp`). Campos existentes intactos (compatibilidad con APKs viejos).
+- Las extras con `session_date` anterior a hoy no se listan.
+
+### BR-COURSE-DETAIL-05: JP en contactos (HU18)
+- `GET /course-detail/sections/:sectionId/contacts` agrega la clave top-level `jefePractica` (`{ code, lastName, firstName }` o `null`), derivada de `section.jp_id`.
 
 ## Endpoints
 

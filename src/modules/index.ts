@@ -1,5 +1,6 @@
 import type { Hono } from "hono";
 import { academicProfileRoutes } from "./academic-profile/index.js";
+import { advisingRoutes } from "./advising/index.js";
 import { alertsRoutes } from "./alerts/index.js";
 import { authRoutes } from "./auth/index.js";
 import { courseDetailRoutes } from "./course-detail/index.js";
@@ -17,4 +18,5 @@ export const registerModules = (app: Hono) => {
   app.route("/course-detail", courseDetailRoutes);
   app.route("/alerts", alertsRoutes);
   app.route("/section-management", sectionManagementRoutes);
+  app.route("/advising", advisingRoutes);
 };

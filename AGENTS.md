@@ -45,9 +45,10 @@ Este repositorio usa Tessl con Spec Driven Development. No implementes comportam
 
 ## Reglas De Dominio
 
-- App centrada en estudiantes: no hay admin screens ni teacher login.
-- `teacher` es dato referencial para secciones y asesorías.
-- Roles válidos: `student`, `delegate`, `subdelegate`.
+- App centrada en estudiantes; sin admin screens. Desde HU18 hay un rol docente acotado (profesor/JP) que solo gestiona asesorías extra (módulo `advising`, spec `specs/features/advising/advising.spec.md`).
+- `teacher` es dato referencial para secciones y asesorías; opcionalmente vinculable a una cuenta (`teacher.user_id`) para login docente (HU18).
+- Roles válidos: `student`, `delegate`, `subdelegate`, `teacher`. El rol equivocado en un módulo recibe 403 vía `requireRole(...)`.
+- Etiqueta Profesor/JP derivada de `section.teacher_id` vs `section.jp_id`, nunca un enum en la persona.
 - Representantes se derivan desde `section_representative`.
 - `student_score` contiene notas personales no oficiales.
 - Alertas `academic_risk` usan solo promedio personal: avance evaluado > 55% y promedio < 10.5.

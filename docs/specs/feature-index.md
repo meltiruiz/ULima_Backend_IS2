@@ -13,6 +13,7 @@ This index connects real user stories, product requirements, backend modules, an
 | 6 | Course Detail | `specs/features/course-detail/course-detail.spec.md` | US13, US14 | R20 | `src/modules/course-detail` | Rewrite sixth; architecture scaffold ready, endpoint implementation pending |
 | 7 | Alerts | `specs/features/alerts/alerts.spec.md` | US15 | R15, R16, R22, R23 | `src/modules/alerts` | Rewrite seventh; architecture scaffold ready, endpoint implementation pending |
 | 8 | Section Management | `specs/features/section-management/section-management.spec.md` | US16, US17, US18 | R14, R17, R18, R21 | `src/modules/section-management` | Rewrite eighth; architecture scaffold ready, endpoint implementation pending |
+| 9 | Advising (docentes/JP) | `specs/features/advising/advising.spec.md` | HU18 | Rol docente, asesorías extra, RSVP/conteo | `src/modules/advising`, `src/modules/course-detail`, `auth-middleware.ts`, `schema.ts` | En implementación (Release 2); requiere migración 0004 aprobada antes de aplicar |
 
 ## Workflow
 

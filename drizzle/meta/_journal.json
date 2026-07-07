@@ -5,29 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1779586155767,
-      "tag": "0000_acoustic_champions",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1780066800000,
-      "tag": "0001_student_specialty_setup_completed",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1780066800000,
-      "tag": "0002_add_token_version",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1783271250713,
-      "tag": "0003_password_reset_token",
+      "when": 1783439583634,
+      "tag": "0000_baseline",
       "breakpoints": true
     }
   ]

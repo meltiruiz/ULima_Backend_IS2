@@ -31,9 +31,9 @@ bun.lockb
 # npm: no versionar package-lock.json (el lockfile canónico es bun.lock)
 package-lock.json
 
-# Drizzle
-drizzle/*.sql
-!drizzle/0001_student_specialty_setup_completed.sql
+# Drizzle: tras el re-baseline (TT04) se retoma el flujo oficial de drizzle-kit,
+# así que TODAS las migraciones (drizzle/*.sql) y el meta se versionan.
+# (Antes se ignoraban con excepciones por archivo; ya no hace falta.)
 
 # Testing
 coverage/
@@ -41,4 +41,7 @@ coverage/
 # Temporary files
 *.tmp
 *.temp
-!drizzle/0003_password_reset_token.sql
+
+# Backups de BD: NUNCA versionar (contienen hashes y datos de producción)
+backup_*.sql
+*.dump

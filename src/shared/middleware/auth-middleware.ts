@@ -7,7 +7,10 @@ import { HttpError } from "../errors/http-error.js";
 
 export type AuthVariables = {
   userId: number;
-  studentId: number;
+  // Presente solo en tokens de alumno; ausente en tokens de docente (HU18).
+  studentId?: number;
+  // Presente solo en tokens de docente (HU18).
+  teacherId?: number;
   role: string;
 };
 
@@ -35,10 +38,22 @@ export const authMiddleware: MiddlewareHandler = async (c, next) => {
     }
 
     const userId = Number(payload.sub);
-    const studentId = Number(payload.studentId);
     const role = payload.role;
     const tokenVersion = Number(payload.tokenVersion);
-    if (!Number.isInteger(userId) || !Number.isInteger(studentId) || typeof role !== "string" || !Number.isInteger(tokenVersion)) {
+    if (!Number.isInteger(userId) || typeof role !== "string" || !Number.isInteger(tokenVersion)) {
+      throw new HttpError(401, "Token de autenticación inválido.", "INVALID_TOKEN");
+    }
+
+    // HU18: un token de docente lleva `teacherId` en vez de `studentId`. Se
+    // exige el identificador que corresponde al rol; el otro debe estar ausente.
+    const isTeacher = role === "teacher";
+    const studentId = Number(payload.studentId);
+    const teacherId = Number(payload.teacherId);
+    if (isTeacher) {
+      if (!Number.isInteger(teacherId)) {
+        throw new HttpError(401, "Token de autenticación inválido.", "INVALID_TOKEN");
+      }
+    } else if (!Number.isInteger(studentId)) {
       throw new HttpError(401, "Token de autenticación inválido.", "INVALID_TOKEN");
     }
 
@@ -53,8 +68,12 @@ export const authMiddleware: MiddlewareHandler = async (c, next) => {
     }
 
     c.set("userId", userId);
-    c.set("studentId", studentId);
     c.set("role", role);
+    if (isTeacher) {
+      c.set("teacherId", teacherId);
+    } else {
+      c.set("studentId", studentId);
+    }
   } catch (error) {
     if (error instanceof HttpError) throw error;
     throw new HttpError(401, "Token de autenticación inválido o expirado.", "INVALID_TOKEN");
@@ -62,3 +81,21 @@ export const authMiddleware: MiddlewareHandler = async (c, next) => {
 
   await next();
 };
+
+/**
+ * HU18: autorización por rol. Corre DESPUÉS de `authMiddleware` (que ya setó
+ * `role` en el contexto) y responde 403 si el rol no está permitido. Evita que
+ * un token de docente ejecute rutas de alumno con `studentId` ausente (y
+ * viceversa). Uso: `app.use("*", authMiddleware); app.use("*", requireRole(...))`
+ * o por-ruta `app.get("/x", authMiddleware, requireRole("teacher"), handler)`.
+ */
+export const requireRole = (...roles: string[]): MiddlewareHandler => async (c, next) => {
+  const role = c.get("role");
+  if (typeof role !== "string" || !roles.includes(role)) {
+    throw new HttpError(403, "No tiene permisos para acceder a este recurso.", "FORBIDDEN");
+  }
+  await next();
+};
+
+/** Roles de alumno: usados por los módulos de estudiante para excluir docentes. */
+export const STUDENT_ROLES = ["student", "delegate", "subdelegate"] as const;

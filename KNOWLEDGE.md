@@ -6,12 +6,12 @@ ULima++ es una app académica móvil para estudiantes de la Universidad de Lima.
 
 ## Alcance Actual
 
-- App centrada en estudiantes.
+- App centrada en estudiantes; desde HU18 hay además un rol docente acotado (profesor/JP) que solo gestiona asesorías extra de sus secciones (módulo `advising`).
 - No hay pantallas admin.
-- No hay login docente.
+- Login docente (HU18): un `app_user` vinculado a `teacher.user_id` inicia sesión con código+contraseña y rol técnico `teacher`. No hay Google SSO docente; el aprovisionamiento de docentes/JP se hace por seed aprobado, no por producto.
 - PostgreSQL es la única fuente de verdad.
 - Los JSON del frontend son descartables y no se migran.
-- La base ya está creada; el backend no debe crear ni poblar tablas.
+- La base ya está creada; el backend no debe crear ni poblar tablas salvo cambios aprobados por spec (HU18 agrega columnas/tabla aditivas y un seed de docentes).
 
 ## Stack
 
@@ -49,7 +49,7 @@ Tablas que no pertenecen al esquema definitivo:
 ## Reglas De Dominio
 
 - `app_user` almacena cuentas que inician sesión.
-- `teacher` es información referencial, no usuario de app.
+- `teacher` es dato referencial de secciones/asesorías y, desde HU18, puede opcionalmente vincularse a una cuenta (`teacher.user_id`) para login docente. La etiqueta Profesor/JP no es un atributo de la persona: se deriva de si su `teacher.id` es el `section.teacher_id` (Profesor) o el `section.jp_id` (JP). Un JP pertenece a una sola sección (índice único parcial) y no puede ser el profesor de esa misma sección (CHECK) ni profesor de ninguna sección del período activo (regla de ciclo validada en servicio/seed).
 - `enrollment.status = 'active'` alimenta cursos actuales, horario, calculadora, asesorías y alertas.
 - `enrollment.status = 'completed'` no equivale a curso aprobado.
 - La aprobación real viene de `student_course_progress.status = 'approved'`.
