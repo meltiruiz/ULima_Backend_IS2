@@ -21,6 +21,21 @@ const buildPasswordResetHtml = (otp: string, expiresMinutes: number) => `
 </div>
 `;
 
+const buildPasswordResetText = (otp: string, expiresMinutes: number) => `ULima+
+
+Restablecimiento de contraseña
+
+Recibimos una solicitud para restablecer la contraseña de tu cuenta.
+
+Tu código de verificación es: ${otp}
+
+Este código expira en ${expiresMinutes} minutos y solo puede usarse una vez.
+
+Si no solicitaste este cambio, ignora este correo; tu contraseña seguirá siendo la misma.
+
+Equipo ULima+
+`;
+
 /**
  * Envía el correo con el OTP de restablecimiento usando la API HTTP de Resend.
  *
@@ -53,6 +68,7 @@ export const sendPasswordResetEmail = async ({ to, otp, expiresMinutes }: SendPa
         to,
         subject: "ULima+ | Código para restablecer tu contraseña",
         html: buildPasswordResetHtml(otp, expiresMinutes),
+        text: buildPasswordResetText(otp, expiresMinutes),
       }),
     });
 

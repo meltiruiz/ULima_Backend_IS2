@@ -106,6 +106,7 @@ targets:
 - `POST /auth/password-reset/request-me` requiere JWT y responde el correo institucional enmascarado (ej. `2023****@aloe.ulima.edu.pe`).
   `[@test] ../../../test/password-reset.logic.test.ts`
 - Envío de correo vía Resend (`src/shared/email/resend-client.ts`, `RESEND_API_KEY` / `RESEND_FROM`). Si `RESEND_API_KEY` está vacía y `NODE_ENV != production`, el OTP se loguea en consola con prefijo `[DEV ONLY]`. Un fallo de envío se loguea del lado servidor y **nunca** se propaga al cliente.
+- El correo se envía **multipart** (`html` + `text/plain`) para mejorar la entregabilidad (menos probabilidad de spam). El remitente (`RESEND_FROM`) usa el **dominio verificado** del proyecto (`no-reply@mail.grupo5app.lat`, con DKIM/SPF/DMARC); ese es también el default en `env.ts` para no caer nunca en `onboarding@resend.dev`.
 
 ### BR-AUTH-12: Rol docente (HU18)
 
