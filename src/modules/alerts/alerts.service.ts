@@ -1,5 +1,6 @@
 import type { EventBus } from "../../events/index.js";
 import type { AlertsRepository, StoredAlert } from "./alerts.repository.js";
+import { aggregateCourseScores, isAcademicRisk, personalAverage } from "./alerts.logic.js";
 
 export class AlertsService {
   constructor(
@@ -9,33 +10,13 @@ export class AlertsService {
 
   async getAlertsForStudent(studentId: number): Promise<StoredAlert[]> {
     const enrollments = await this.repository.getActiveEnrollmentsWithScores(studentId);
-    const courseGroups = new Map<number, { name: string; gradedWeight: number; weightedSum: number; numExamenes: number }>();
-
-    for (const row of enrollments) {
-      if (!courseGroups.has(row.course_id)) {
-        courseGroups.set(row.course_id, {
-          name: row.course_name,
-          gradedWeight: 0,
-          weightedSum: 0,
-          numExamenes: 0,
-        });
-      }
-
-      const group = courseGroups.get(row.course_id)!;
-      if (row.assessment_id !== null && row.score_value !== null) {
-        const weight = Number(row.assessment_weight || 0);
-        const value = Number(row.score_value);
-        group.gradedWeight += weight;
-        group.weightedSum += value * weight;
-        group.numExamenes += 1;
-      }
-    }
+    // Agregación y umbrales viven en alerts.logic.ts (puro, testeable).
+    const courseGroups = aggregateCourseScores(enrollments);
 
     // Evaluate risk for each course
-    for (const group of courseGroups.values()) {
-      const promedioPersonal = group.gradedWeight > 0 ? (group.weightedSum / group.gradedWeight) : 0;
-      // Threshold: progress > 55% AND average < 10.5
-      if (group.gradedWeight > 55 && promedioPersonal < 10.5) {
+    for (const group of courseGroups) {
+      if (isAcademicRisk(group.gradedWeight, group.weightedSum)) {
+        const promedioPersonal = personalAverage(group.gradedWeight, group.weightedSum);
         const title = `Riesgo Académico: ${group.name}`;
         const exists = await this.repository.findAlertByTitle(studentId, title);
         if (!exists) {
