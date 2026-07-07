@@ -48,6 +48,13 @@ export const advisingModalityEnum = pgEnum("advising_modality", [
   "hybrid",
 ]);
 
+// HU18: distingue asesorías recurrentes (carga administrativa ya existente) de
+// las extras puntuales que un docente publica para una fecha concreta.
+export const advisingKindEnum = pgEnum("advising_kind", [
+  "recurring",
+  "extra",
+]);
+
 export const courseCategoryEnum = pgEnum("course_category", [
   "general_studies",
   "common",
@@ -102,6 +109,9 @@ export const teacher = pgTable("teacher", {
   teacherCode: varchar("teacher_code", { length: 50 }).unique(),
   fullName: varchar("full_name", { length: 150 }).notNull(),
   institutionalEmail: varchar("institutional_email", { length: 150 }).unique(),
+  // HU18: vínculo opcional a una cuenta para login docente. Nullable: los
+  // profesores sin cuenta (la mayoría, dato referencial) siguen siendo válidos.
+  userId: integer("user_id").unique().references(() => appUser.id),
 });
 
 export const specialty = pgTable("specialty", {
@@ -241,10 +251,17 @@ export const section = pgTable("section", {
   courseOfferingId: integer("course_offering_id").notNull().references(() => courseOffering.id),
   teacherId: integer("teacher_id").notNull().references(() => teacher.id),
   code: varchar("code", { length: 30 }).notNull(),
+  // HU18: jefe de práctica de la sección (0 o 1). El rol Profesor/JP se deriva
+  // de qué columna referencia al teacher; no es un enum en la persona.
+  jpId: integer("jp_id").references(() => teacher.id),
 }, (t) => ({
   uqSectionOfferingCode: unique("uq_section_offering_code").on(t.courseOfferingId, t.code),
   uqSectionIdOffering: unique("uq_section_id_offering").on(t.id, t.courseOfferingId),
   idxSectionCourseOffering: index("idx_section_course_offering").on(t.courseOfferingId),
+  // El JP no puede ser el profesor de su propia sección.
+  chkSectionJpNotTeacher: check("chk_section_jp_not_teacher", sql`${t.jpId} IS NULL OR ${t.jpId} <> ${t.teacherId}`),
+  // Un JP pertenece a una sola sección (índice único parcial: ignora NULLs).
+  uqSectionJp: uniqueIndex("uq_section_jp").on(t.jpId).where(sql`${t.jpId} IS NOT NULL`),
 }));
 
 export const enrollment = pgTable("enrollment", {
@@ -328,16 +345,42 @@ export const courseAdvisingSession = pgTable("course_advising_session", {
   meetingUrl: varchar("meeting_url", { length: 255 }),
   modality: advisingModalityEnum("modality").notNull().default("hybrid"),
   note: text("note"),
+  // HU18: recurrentes (default) vs extras puntuales.
+  kind: advisingKindEnum("kind").notNull().default("recurring"),
+  // Fecha concreta de la asesoría extra (NULL en recurrentes).
+  sessionDate: date("session_date", { mode: "string" }),
+  // Cupo máximo opcional (NULL = sin límite).
+  capacity: integer("capacity"),
 }, (t) => ({
+  // Los únicos de "día de semana + hora" solo aplican a recurrentes: dos extras
+  // en fechas distintas pueden caer el mismo día de semana a la misma hora.
   uqCourseAdvisingSessionCourse: uniqueIndex("uq_course_advising_session_course")
     .on(t.courseOfferingId, t.teacherId, t.dayOfWeek, t.startTime)
-    .where(sql`${t.sectionId} IS NULL`),
+    .where(sql`${t.sectionId} IS NULL AND ${t.kind} = 'recurring'`),
   uqCourseAdvisingSessionSection: uniqueIndex("uq_course_advising_session_section")
     .on(t.sectionId, t.teacherId, t.dayOfWeek, t.startTime)
-    .where(sql`${t.sectionId} IS NOT NULL`),
+    .where(sql`${t.sectionId} IS NOT NULL AND ${t.kind} = 'recurring'`),
+  // Unicidad propia de extras: por fecha concreta.
+  uqCourseAdvisingSessionExtra: uniqueIndex("uq_course_advising_session_extra")
+    .on(t.sectionId, t.teacherId, t.sessionDate, t.startTime)
+    .where(sql`${t.kind} = 'extra'`),
   chkCourseAdvisingDay: check("chk_course_advising_day", sql`${t.dayOfWeek} BETWEEN 1 AND 7`),
   chkCourseAdvisingTime: check("chk_course_advising_time", sql`${t.startTime} < ${t.endTime}`),
+  // Coherencia extra ↔ fecha: una extra siempre tiene fecha.
+  chkCourseAdvisingExtraDate: check("chk_course_advising_extra_date", sql`${t.kind} <> 'extra' OR ${t.sessionDate} IS NOT NULL`),
+  chkCourseAdvisingCapacity: check("chk_course_advising_capacity", sql`${t.capacity} IS NULL OR ${t.capacity} > 0`),
   idxCourseAdvisingSessionCourseOffering: index("idx_course_advising_session_course_offering").on(t.courseOfferingId),
+}));
+
+// HU18/HU17: confirmación de asistencia de un estudiante a una asesoría.
+export const advisingRsvp = pgTable("advising_rsvp", {
+  id: integer("id").generatedByDefaultAsIdentity().primaryKey(),
+  advisingSessionId: integer("advising_session_id").notNull().references(() => courseAdvisingSession.id),
+  studentId: integer("student_id").notNull().references(() => student.id),
+  createdAt: timestamp("created_at", { mode: "date", withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  uqAdvisingRsvp: unique("uq_advising_rsvp").on(t.advisingSessionId, t.studentId),
+  idxAdvisingRsvpSession: index("idx_advising_rsvp_session").on(t.advisingSessionId),
 }));
 
 export const assessmentType = pgTable("assessment_type", {

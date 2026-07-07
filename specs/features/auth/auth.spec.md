@@ -107,6 +107,33 @@ targets:
   `[@test] ../../../test/password-reset.logic.test.ts`
 - Envío de correo vía Resend (`src/shared/email/resend-client.ts`, `RESEND_API_KEY` / `RESEND_FROM`). Si `RESEND_API_KEY` está vacía y `NODE_ENV != production`, el OTP se loguea en consola con prefijo `[DEV ONLY]`. Un fallo de envío se loguea del lado servidor y **nunca** se propaga al cliente.
 
+### BR-AUTH-12: Rol docente (HU18)
+
+- `AppRole` incorpora `"teacher"`. Profesor y JP comparten este único rol técnico; la etiqueta ("Profesor"/"Jefe de Práctica") se deriva de `section.teacher_id` vs `section.jp_id` (ver spec de advising, BR-ADV-01).
+- **Detección en login** (`POST /auth/login`): si el `code` no corresponde a ningún perfil `student`, se busca un perfil docente: `app_user` ↔ `teacher.user_id`. Si existe → rol `teacher`; el flujo NO exige matrícula activa ni consulta `section_representative`. Si el `app_user` no tiene ni perfil student ni teacher → `401 USER_NOT_FOUND` (cuenta huérfana).
+- Una cuenta (`app_user`) es de estudiante **o** de docente, nunca ambas: el perfil student tiene precedencia en el lookup y el seed de docentes crea cuentas separadas.
+- **JWT de docente**: `{ sub, teacherId, code, role: "teacher", tokenVersion }` — **sin `studentId`**. El de estudiante no cambia.
+- **Middleware**: exige `studentId` entero cuando `role != "teacher"` y `teacherId` entero cuando `role == "teacher"`; setea `c.set("teacherId", …)` en ese caso. La validación de `tokenVersion` contra `app_user` es idéntica para ambos.
+- **Helper `requireRole(...roles)`** (en `src/shared/middleware/auth-middleware.ts`): middleware que corre después de `authMiddleware` y responde `403 FORBIDDEN` ("No tiene permisos para acceder a este recurso.") si el rol del contexto no está en la lista. Los módulos de alumno (`schedule`, `curriculum`, `alerts`, `grades`, `academic-profile`, `course-detail`, `section-management`) lo aplican con los roles de alumno; el módulo `advising` con `teacher`.
+- **`GET /auth/me`** con token docente: devuelve el shape docente (ver Endpoints), incluida la etiqueta `teacherLabel`.
+- **Google SSO sigue siendo solo de alumnos** en esta versión: la restricción de dominio `@aloe.ulima.edu.pe` y el `join student` de `findByEmail` no cambian. Un docente usa código/contraseña.
+- **Login de estudiantes: cero cambios observables.** Criterio de aceptación del issue #30: smoke test de login de alumno antes del merge.
+- La respuesta de login/me para docentes incluye `"setupComplete": true` fijo (no aplica el setup de carrera) para no romper el routing del frontend.
+
+**Shape del user docente** (login y `/auth/me`):
+```json
+{
+  "id": 42,
+  "teacherId": 7,
+  "code": "T0123",
+  "fullName": "Apellido Apellido, Nombre",
+  "institutionalEmail": "docente@ulima.edu.pe",
+  "role": "teacher",
+  "teacherLabel": "Profesor",
+  "setupComplete": true
+}
+```
+
 ## Endpoints
 
 ### POST /auth/login
@@ -232,12 +259,15 @@ Solicita el código para el usuario autenticado (envía directo a su correo).
 | Field | Type | Description |
 | --- | --- | --- |
 | `sub` | `number` | `app_user.id` |
-| `studentId` | `number` | `student.id` |
+| `studentId` | `number` | `student.id` — **solo tokens de alumno**; ausente en tokens de docente (HU18) |
+| `teacherId` | `number` | `teacher.id` — **solo tokens de docente** (HU18); ausente en tokens de alumno |
 | `code` | `string` | `app_user.code` |
-| `role` | `string` | `student` / `delegate` / `subdelegate` |
+| `role` | `string` | `student` / `delegate` / `subdelegate` / `teacher` |
 | `tokenVersion` | `number` | Versión actual de la sesión |
 | `iat` | `number` | Issued at (Unix epoch seconds) |
 | `exp` | `number` | Expiration (Unix epoch seconds) |
+
+Cada token lleva `studentId` **o** `teacherId` según el rol, nunca ambos (ver BR-AUTH-12).
 
 - Algorithm: `HS256`
 - Signing key: `config.auth.jwtSecret`

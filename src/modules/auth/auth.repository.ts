@@ -8,6 +8,9 @@ import type {
   AuthUserWithPassword,
   PasswordResetTokenRecord,
   PasswordResetUser,
+  TeacherAuthUser,
+  TeacherAuthUserWithPassword,
+  TeacherLabel,
 } from "./auth.types.js";
 
 type UserRow = {
@@ -50,6 +53,16 @@ type CurrentCourseRow = {
   course_id: number;
   course_name: string;
   period_code: string | null;
+};
+
+type TeacherRow = {
+  id: number;
+  code: string;
+  full_name: string;
+  institutional_email: string;
+  password_hash?: string;
+  token_version: number;
+  teacher_id: number;
 };
 
 const splitName = (fullName: string) => {
@@ -172,6 +185,85 @@ export class AuthRepository {
 
     const row = rows[0];
     return row ? this.buildUser(row, role) : null;
+  }
+
+  /**
+   * HU18: busca un perfil DOCENTE por código de login (`app_user.code`) uniendo
+   * `teacher.user_id`. Devuelve null si el código no corresponde a un docente
+   * con cuenta (p. ej. es un alumno, o un docente sin `user_id`).
+   */
+  async findTeacherByCodeWithPassword(code: string): Promise<TeacherAuthUserWithPassword | null> {
+    const rows = await this.database.execute(sql`
+      select
+        au.id,
+        au.code,
+        au.full_name,
+        au.institutional_email,
+        au.password_hash,
+        au.token_version,
+        t.id as teacher_id
+      from app_user au
+      join teacher t on t.user_id = au.id
+      where au.code = ${code.trim()}
+      limit 1
+    `) as unknown as TeacherRow[];
+
+    const row = rows[0];
+    if (!row || !row.password_hash) return null;
+
+    const label = await this.deriveTeacherLabel(Number(row.teacher_id));
+    return {
+      ...this.buildTeacherUser(row, label),
+      passwordHash: row.password_hash,
+    };
+  }
+
+  /** HU18: perfil docente por id de `app_user` (para `GET /auth/me`). */
+  async findTeacherById(userId: number): Promise<TeacherAuthUser | null> {
+    const rows = await this.database.execute(sql`
+      select
+        au.id,
+        au.code,
+        au.full_name,
+        au.institutional_email,
+        au.token_version,
+        t.id as teacher_id
+      from app_user au
+      join teacher t on t.user_id = au.id
+      where au.id = ${userId}
+      limit 1
+    `) as unknown as TeacherRow[];
+
+    const row = rows[0];
+    if (!row) return null;
+
+    const label = await this.deriveTeacherLabel(Number(row.teacher_id));
+    return this.buildTeacherUser(row, label);
+  }
+
+  /** "Jefe de Práctica" si el teacher es `jp_id` de alguna sección; si no, "Profesor". */
+  async deriveTeacherLabel(teacherId: number): Promise<TeacherLabel> {
+    const rows = await this.database.execute(sql`
+      select 1 from section where jp_id = ${teacherId} limit 1
+    `) as unknown as Array<{ "?column?": number }>;
+    return rows.length > 0 ? "Jefe de Práctica" : "Profesor";
+  }
+
+  private buildTeacherUser(row: TeacherRow, teacherLabel: TeacherLabel): TeacherAuthUser {
+    const names = splitName(row.full_name);
+    return {
+      id: Number(row.id),
+      teacherId: Number(row.teacher_id),
+      code: row.code,
+      tokenVersion: Number(row.token_version),
+      fullName: row.full_name,
+      ...names,
+      institutionalEmail: row.institutional_email,
+      email: row.institutional_email,
+      role: "teacher",
+      teacherLabel,
+      setupComplete: true,
+    };
   }
 
   async hasActiveEnrollment(studentId: number): Promise<boolean> {

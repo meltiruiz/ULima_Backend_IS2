@@ -24,8 +24,47 @@ Estado real auditado el 2026-07-05 y protocolo vigente hasta el fin del ciclo 20
 |---|---|---|---|---|---|
 | 0001 | `0001_student_specialty_setup_completed.sql` | `student.specialty_setup_completed` | (histórico, junio 2026) | equipo | columna existe en BD ✔ |
 | 0003 | `0003_password_reset_token.sql` | Tabla `password_reset_token` + índice + FK (HU20) | 2026-07-05 | Jeff | `to_regclass` ✔, 7 columnas ✔, índice ✔, FK ✔, smoke test local ✔. Backup previo con `pg_dump` ✔ |
+| 0004 | `0004_advising_teacher_role.sql` | HU18: `teacher.user_id`; `section.jp_id` + CHECK + índice único parcial `uq_section_jp`; enum `advising_kind`; `course_advising_session.kind/session_date/capacity` + checks; **re-scope de `uq_course_advising_session_course/section` a `kind='recurring'`** + nuevo `uq_course_advising_session_extra`; tabla `advising_rsvp` + índice | **PENDIENTE** (aplicar con backup, en transacción, antes del deploy de HU18) | — | — |
 
 > Nota: los números 0000 y 0002 del journal corresponden a archivos que ya no existen; no se reutilizan esos números para evitar ambigüedad.
+
+### Aplicación de la 0004 (runbook)
+
+Requiere **datos móviles** (el wifi de la ULima bloquea el 5432). `DATABASE_URL`
+vive en `.env`, NO como variable de shell: hay que sourcearla. Los scripts
+`db:apply`/`db:seed:docentes` la leen solos vía `dotenv`; solo el backup con
+`pg_dump` necesita exportarla.
+
+Paso 1 — backup (dos comandos):
+```bash
+export DATABASE_URL=$(grep '^DATABASE_URL=' .env | cut -d= -f2-)
+```
+```bash
+/opt/homebrew/opt/libpq/bin/pg_dump "$DATABASE_URL" > backup_pre_0004_$(date +%Y%m%d).sql
+```
+
+Paso 2 — aplicar la migración (bun, transaccional, reusa la conexión de la app; no depende de psql/SSL):
+```bash
+bun run db:apply drizzle/0004_advising_teacher_role.sql
+```
+
+Paso 3 — seed de docentes, primero el plan y luego aplicar:
+```bash
+bun run db:seed:docentes
+```
+```bash
+bun run db:seed:docentes -- --apply
+```
+
+Paso 4 — verificar en la BD, y recién entonces mergear/deployar el código HU18.
+
+⚠️ El único paso no puramente aditivo es el `DROP INDEX`/`CREATE INDEX` de los
+dos únicos de asesorías (metadato, sin pérdida de filas): se reconstruyen con la
+condición `kind='recurring'`. Todo corre en una transacción: si algo falla,
+ROLLBACK y la BD queda intacta.
+
+> Alternativa a bun para el paso 2 (si prefieres psql), con la URL ya exportada
+> arriba: `/opt/homebrew/opt/libpq/bin/psql "$DATABASE_URL" -1 -f drizzle/0004_advising_teacher_role.sql`
 
 ## Verificación rápida del despliegue
 
