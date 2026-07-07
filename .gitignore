@@ -42,3 +42,8 @@ coverage/
 *.tmp
 *.temp
 !drizzle/0003_password_reset_token.sql
+!drizzle/0004_advising_teacher_role.sql
+
+# Backups de BD: NUNCA versionar (contienen hashes y datos de producción)
+backup_*.sql
+*.dump
