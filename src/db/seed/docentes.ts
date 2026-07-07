@@ -19,9 +19,19 @@
 // contraseña profesor2026 (profesor) / jefe2026 (JP), bcrypt costo 10.
 
 import "dotenv/config";
-import { db } from "../index";
-import { sql } from "drizzle-orm";
+import postgres from "postgres";
 import bcrypt from "bcryptjs";
+
+// Conexión propia (no importa la config/db de la app, que exige JWT_SECRET y
+// otras vars que este seed no usa). Misma URL y mismo driver que producción,
+// así que si la app conecta, este script también. Requiere datos móviles: el
+// wifi de la ULima bloquea el 5432.
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) {
+  console.error("❌ Falta DATABASE_URL en .env");
+  process.exit(1);
+}
+const sql = postgres(DATABASE_URL);
 
 const APPLY = process.argv.includes("--apply");
 const STUDENT_CODE = process.env.STUDENT_CODE ?? "20235218";
@@ -70,15 +80,15 @@ type SectionRow = {
 async function main() {
   console.log(`\n=== Seed docentes HU18 — ${APPLY ? "APPLY" : "DRY-RUN"} ===\n`);
 
-  const period = (await db.execute(sql`
+  const period = (await sql`
     select id, code from academic_period where is_active = true limit 1
-  `)) as unknown as Array<{ id: number; code: string }>;
+  `) as unknown as Array<{ id: number; code: string }>;
   if (period.length === 0) throw new Error("No hay período académico activo.");
   const periodId = period[0].id;
   console.log(`Período activo: ${period[0].code} (id=${periodId})`);
 
   // Secciones donde Jeff está matriculado (activo) en el período activo.
-  const sections = (await db.execute(sql`
+  const sections = (await sql`
     select sec.id as section_id, sec.code as section_code, c.name as course_name,
            sec.teacher_id, t.full_name as teacher_name, sec.jp_id
     from app_user au
@@ -90,7 +100,7 @@ async function main() {
     join teacher t on t.id = sec.teacher_id
     where au.code = ${STUDENT_CODE}
     order by c.name
-  `)) as unknown as SectionRow[];
+  `) as unknown as SectionRow[];
 
   if (sections.length === 0) {
     throw new Error(`El alumno ${STUDENT_CODE} no tiene secciones activas en el período.`);
@@ -135,13 +145,13 @@ async function main() {
   // Regla de ciclo: el JP no debe ser profesor de ninguna sección del período.
   // (El JP es un teacher nuevo, así que trivial; se valida igual para el caso
   // en que JP_USERNAME/JP_FULLNAME apunte a alguien ya existente.)
-  const jpConflict = (await db.execute(sql`
+  const jpConflict = (await sql`
     select sec.id from section sec
     join course_offering co on co.id = sec.course_offering_id and co.academic_period_id = ${periodId}
     join teacher t on t.id = sec.teacher_id
     where lower(t.institutional_email) = lower(${jpEmail})
     limit 1
-  `)) as unknown as Array<{ id: number }>;
+  `) as unknown as Array<{ id: number }>;
   if (jpConflict.length > 0) {
     throw new Error(`Regla de ciclo violada: ${jpEmail} ya es profesor de una sección del período activo; no puede ser JP.`);
   }
@@ -154,49 +164,49 @@ async function main() {
   const profHash = await bcrypt.hash(PROF_PASSWORD, BCRYPT_COST);
   const jpHash = await bcrypt.hash(JP_PASSWORD, BCRYPT_COST);
 
-  // Transacción real de Drizzle (una sola conexión reservada). NO usar
-  // `db.execute(sql`begin`)`: sobre el pool de postgres-js (max>1) lanza
-  // UNSAFE_TRANSACTION y además no envolvería los statements en una tx.
+  // Transacción de postgres.js: el callback recibe un `sql` ligado a una única
+  // conexión; si algo lanza, hace ROLLBACK automático. (No usar BEGIN crudo
+  // sobre el pool: postgres.js lo prohíbe con max>1.)
   let jpTeacherId = 0;
-  await db.transaction(async (tx) => {
+  await sql.begin(async (tx) => {
     // 1. Cuenta del profesor existente (idempotente por code).
-    const profUser = (await tx.execute(sql`
+    const profUser = (await tx`
       insert into app_user (code, full_name, institutional_email, password_hash, token_version)
       values (${profUsername}, ${target.teacher_name}, ${profEmail}, ${profHash}, 1)
       on conflict (code) do update set code = excluded.code
       returning id
-    `)) as unknown as Array<{ id: number }>;
+    `) as unknown as Array<{ id: number }>;
     const profUserId = profUser[0].id;
-    await tx.execute(sql`
+    await tx`
       update teacher set user_id = ${profUserId} where id = ${target.teacher_id} and user_id is null
-    `);
+    `;
 
     // 2. Teacher del JP (idempotente por email).
-    const jpTeacher = (await tx.execute(sql`
+    const jpTeacher = (await tx`
       insert into teacher (full_name, institutional_email)
       values (${JP_FULLNAME}, ${jpEmail})
       on conflict (institutional_email) do update set full_name = excluded.full_name
       returning id
-    `)) as unknown as Array<{ id: number }>;
+    `) as unknown as Array<{ id: number }>;
     jpTeacherId = jpTeacher[0].id;
 
     // 3. Cuenta del JP.
-    const jpUser = (await tx.execute(sql`
+    const jpUser = (await tx`
       insert into app_user (code, full_name, institutional_email, password_hash, token_version)
       values (${jpUsername}, ${JP_FULLNAME}, ${jpEmail}, ${jpHash}, 1)
       on conflict (code) do update set code = excluded.code
       returning id
-    `)) as unknown as Array<{ id: number }>;
+    `) as unknown as Array<{ id: number }>;
     const jpUserId = jpUser[0].id;
-    await tx.execute(sql`
+    await tx`
       update teacher set user_id = ${jpUserId} where id = ${jpTeacherId} and user_id is null
-    `);
+    `;
 
     // 4. Asignar el JP a la sección (CHECK jp<>teacher + índice único parcial
     //    lo validan a nivel BD; si fallan, la transacción hace rollback).
-    await tx.execute(sql`
+    await tx`
       update section set jp_id = ${jpTeacherId} where id = ${target.section_id}
-    `);
+    `;
   });
 
   console.log(`\n✓ Seed aplicado.`);
@@ -206,8 +216,12 @@ async function main() {
 }
 
 main()
-  .then(() => process.exit(0))
-  .catch((e) => {
+  .then(async () => {
+    await sql.end();
+    process.exit(0);
+  })
+  .catch(async (e) => {
     console.error("\n✗ Seed falló:", e instanceof Error ? e.message : e);
+    await sql.end().catch(() => {});
     process.exit(1);
   });
