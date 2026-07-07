@@ -194,15 +194,14 @@ Notas:
 
 ## Grades
 
-- `GET /grades/me/courses`
-- `PUT /grades/me/scores`
-- `GET /grades/me/courses/:sectionId/average`
+- `GET /grades/me/courses` — **IMPLEMENTADO**. Devuelve cursos + evaluaciones del sílabo con sus pesos, para la calculadora del alumno.
+- ~~`PUT /grades/me/scores`~~ — **NO IMPLEMENTADO** (ver nota de arquitectura).
+- ~~`GET /grades/me/courses/:sectionId/average`~~ — **NO IMPLEMENTADO** (ver nota de arquitectura).
 
 Notas:
 
-- `student_score` almacena notas personales no oficiales.
-- `PUT /grades/me/scores` solo puede afectar scores del estudiante autenticado.
-- Assessment debe pertenecer al syllabus del `course_offering` de la sección matriculada.
+- **Arquitectura real (HU06/HU07)**: el backend `grades` es **solo lectura** (`GET /grades/me/courses`). El **guardado de notas del alumno es local en el cliente** (`shared_preferences`, servicio Flutter `NotasService`) y el **cálculo del promedio ponderado ocurre en el frontend** (calculadora). Son notas personales no oficiales; por eso no se persisten en `student_score` desde la app ni se calcula el promedio en servidor. Los endpoints `PUT /grades/me/scores` y `.../average` quedaron documentados pero **nunca se implementaron**; se listan como no implementados para que el contrato refleje la realidad.
+- `student_score` existe en el esquema (notas oficiales de referencia) pero la app no lo escribe.
 - `POST /grades/syllabi` queda fuera de v1 salvo spec aprobada; la tabla `syllabus` ya existe.
 
 ## Schedule
@@ -342,12 +341,12 @@ Notas:
 
 ## Section Management
 
-- `GET /section-management/me/sections`
-- `POST /section-management/sections/:sectionId/announcements`
-- `GET /section-management/sections/:sectionId/progress`
+- `GET /section-management/representatives` — **IMPLEMENTADO** (único endpoint real). Lista los representantes (delegado/subdelegado) activos por sección.
+- ~~`GET /section-management/me/sections`~~ — **NO IMPLEMENTADO**.
+- ~~`POST /section-management/sections/:sectionId/announcements`~~ — **NO IMPLEMENTADO** (HU10, pendiente).
+- ~~`GET /section-management/sections/:sectionId/progress`~~ — **NO IMPLEMENTADO** (HU11, pendiente).
 
 Notas:
 
-- Solo `delegate` o `subdelegate` activos en `section_representative`.
-- Anuncios escriben en `announcement`.
-- Métricas agregadas no deben exponer notas individuales.
+- **Estado real**: el módulo solo expone `GET /representatives`. Los endpoints de **registro de anuncios (HU10)** y **estadísticas/progreso (HU11)** están documentados pero **no implementados** — ambas HU siguen pendientes (ver tablero). Existe scaffolding sin uso (`createAnnouncementSchema`, tabla `announcement`, observer stub).
+- Cuando se implementen: solo `delegate`/`subdelegate` activos en `section_representative`; los anuncios escriben en `announcement`; las métricas agregadas no exponen notas individuales.
