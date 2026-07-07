@@ -15,7 +15,8 @@
     "db:studio": "drizzle-kit studio",
     "db:seed": "bun run src/db/seed/index.ts",
     "db:seed:docentes": "bun run src/db/seed/docentes.ts",
-    "db:apply": "bun run src/db/apply-migration.ts"
+    "db:apply": "bun run src/db/apply-migration.ts",
+    "db:stamp-baseline": "bun run src/db/stamp-baseline.ts"
   },
   "dependencies": {
     "@aws-sdk/client-rds-data": "^3.1053.0",
