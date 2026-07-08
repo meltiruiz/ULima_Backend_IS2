@@ -1,47 +1,40 @@
 import { Hono } from "hono";
 import type { SectionManagementController } from "./section-management.controller.js";
-import { sql } from "drizzle-orm";
-import { db } from "../../db/index.js";
-import { authMiddleware, requireRole, STUDENT_ROLES } from "../../shared/middleware/auth-middleware.js";
+import {
+  authMiddleware,
+  requireRole,
+  STUDENT_ROLES,
+  type AuthVariables,
+} from "../../shared/middleware/auth-middleware.js";
 
-export const createSectionManagementRoutes = (_controller: SectionManagementController) => {
-  const app = new Hono();
+export const createSectionManagementRoutes = (controller: SectionManagementController) => {
+  const app = new Hono<{ Variables: AuthVariables }>();
 
-  // Expone representantes (delegados/subdelegados) por sección: requiere JWT válido de alumno.
   app.use("*", authMiddleware);
   app.use("*", requireRole(...STUDENT_ROLES));
 
-  app.get("/representatives", async (c) => {
-    try {
-      const rows = await db.execute(sql`
-        select
-          sr.id,
-          sr.enrollment_id,
-          sr.position,
-          sr.section_id
-        from section_representative sr
-        where sr.is_active = true
-        order by sr.section_id, sr.position
-      `) as unknown as Array<{
-        id: number;
-        enrollment_id: number;
-        position: string;
-        section_id: number;
-      }>;
+  app.get("/representatives", (c) => controller.getRepresentatives(c));
 
-      return c.json({
-        sectionRepresentatives: rows.map((row) => ({
-          id: String(row.id),
-          enrollmentId: String(row.enrollment_id),
-          idSeccion: String(row.section_id),
-          role: row.position === "delegate" ? "delegado" : row.position === "subdelegate" ? "subdelegado" : row.position,
-        })),
-      });
-    } catch (e) {
-      console.error("DB Error in /representatives", e);
-      return c.json({ sectionRepresentatives: [] });
-    }
-  });
+  app.get(
+    "/sections/:sectionId/announcements",
+    requireRole("delegate", "subdelegate"),
+    (c) => controller.getAnnouncements(c),
+  );
+  app.post(
+    "/sections/:sectionId/announcements",
+    requireRole("delegate", "subdelegate"),
+    (c) => controller.createAnnouncement(c),
+  );
+  app.put(
+    "/announcements/:id",
+    requireRole("delegate", "subdelegate"),
+    (c) => controller.updateAnnouncement(c),
+  );
+  app.delete(
+    "/announcements/:id",
+    requireRole("delegate", "subdelegate"),
+    (c) => controller.deleteAnnouncement(c),
+  );
 
   return app;
 };

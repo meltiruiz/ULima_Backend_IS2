@@ -4,6 +4,9 @@ import { sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { authMiddleware, requireRole, STUDENT_ROLES } from "../../shared/middleware/auth-middleware.js";
 
+const dayName = (day: number) =>
+  ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"][day - 1] ?? "Por definir";
+
 const splitName = (fullName: string) => {
   if (fullName.includes(",")) {
     const parts = fullName.split(",");
