@@ -4,7 +4,6 @@ description: Login, logout and session management with JWT for ULima++ students
 targets:
   - ../../../src/modules/auth/**
   - ../../../src/shared/middleware/auth-middleware.ts
-  - ../../../src/db/schema/schema.ts
 ---
 
 # Authentication
@@ -25,11 +24,12 @@ targets:
 - `password` se verifica contra `app_user.password_hash` usando `bcryptjs.compare`.
 - Si `code` no existe → `401 USER_NOT_FOUND`.
 - Si `password` no coincide → `401 INVALID_PASSWORD`.
-- El usuario solo inicia sesión si existe como `student` y tiene al menos una matrícula `enrollment.status = 'active'`.
-- Si no tiene matrícula activa → `403 NOT_ENROLLED`.
+- El usuario solo inicia sesión si existe como `student` y tiene al menos una matrícula `enrollment.status = 'active'`. Excepción: si el `code` pertenece a un `teacher` vinculado a `app_user` vía `teacher.user_id`, inicia sesión como docente sin requerir matrícula activa (HU18).
+- Si no tiene matrícula activa ni es docente → `403 NOT_ENROLLED`.
 
 ### BR-AUTH-02: Role derivation
-- El rol del estudiante se determina al momento del login consultando `section_representative`.
+- Si el login es docente (vía `teacher.user_id`), el rol es `teacher` y no aplica la derivación de `section_representative`.
+- Para estudiantes, el rol se determina al momento del login consultando `section_representative`.
 - Si existe fila activa (`isActive = true`) para el `studentId` con `position = 'delegate'` → rol `delegate`.
 - Si no, si existe fila activa con `position = 'subdelegate'` → rol `subdelegate`.
 - Si no hay representación activa → rol `student`.
@@ -288,69 +288,6 @@ El middleware `authMiddleware` en `src/shared/middleware/auth-middleware.ts` deb
 8. Si falta el header → `401 MISSING_TOKEN`.
 9. Si el token es inválido, expiró, o fue revocado por versión → `401 INVALID_TOKEN`.
 
-## Implementation Plan
-
-### auth.repository.ts
-
-Agregar métodos:
-
-- `incrementTokenVersion(userId: number): Promise<number>`
-  - Ejecuta `UPDATE app_user SET tokenVersion = tokenVersion + 1 WHERE id = userId` y retorna el nuevo valor.
-
-- `findByCodeWithPassword(code: string): Promise<AuthUserWithPassword | null>`
-  - JOIN `app_user` con `student` donde `app_user.code = code`.
-  - Retorna datos de usuario, `tokenVersion`, `passwordHash`, `setupComplete` desde `student.specialty_setup_completed`, especialidades activas y cursos activos.
-
-- `hasActiveEnrollment(studentId: number): Promise<boolean>`
-  - Verifica al menos una fila en `enrollment` con `student_id = studentId` y `status = 'active'`.
-
-- `findActiveRepresentation(studentId: number): Promise<{ position: 'delegate' | 'subdelegate' } | null>`
-  - JOIN `enrollment` con `section_representative` donde `enrollment.studentId = studentId`, `enrollment.status = 'active'`, `section_representative.isActive = true`.
-  - Si hay múltiples, prioriza `delegate`.
-
-- `findById(userId: number): Promise<AuthUser | null>`
-  - JOIN `app_user` con `student` donde `app_user.id = userId`.
-  - Retorna datos de usuario, `setupComplete`, especialidades activas y cursos activos.
-
-### auth.service.ts
-
-Reemplazar implementación actual:
-
-- `login(input: { code: string; password: string })`:
-  1. Llama a `repository.findByCodeWithPassword(code)`.
-  2. Si no existe → `HttpError(401, ..., 'USER_NOT_FOUND')`.
-  3. Compara password con `bcryptjs.compare(input.password, user.passwordHash)`.
-  4. Si no coincide → `HttpError(401, ..., 'INVALID_PASSWORD')`.
-  5. Verifica matrícula activa con `repository.hasActiveEnrollment(user.studentId)`.
-  6. Si no tiene matrícula activa → `HttpError(403, ..., 'NOT_ENROLLED')`.
-  7. Llama a `repository.incrementTokenVersion(user.id)` para conseguir la nueva versión e invalidar sesiones previas.
-  8. Consulta `repository.findActiveRepresentation(user.studentId)` para determinar rol.
-  9. Firma JWT con `sub: user.id`, `studentId: user.studentId`, `code: user.code`, `role`, y la nueva `tokenVersion`.
-  10. Retorna `{ token, tokenType: 'Bearer', expiresIn, user }`.
-
-- `logout(userId: number)`:
-  1. Llama a `repository.incrementTokenVersion(userId)` para forzar la expiración en otros dispositivos.
-
-- `me(userId: number)`:
-  1. Llama a `repository.findById(userId)`.
-  2. Si no existe → `HttpError(404, ..., 'USER_NOT_FOUND')`.
-  3. Retorna `{ user }`.
-
-### auth.controller.ts
-
-- `login(input)`: sin cambios de firma.
-- `me(code)`: cambiar a `me(userId: number)` — recibe `userId` del contexto en vez de `code`.
-
-### auth.routes.ts
-
-- `POST /login`: sin cambios estructurales.
-- `GET /me`: quitar lógica de headers dev-mode. Agregar `authMiddleware`. Extraer `userId` de `c.get('userId')`.
-- `POST /logout`: agregar `authMiddleware`.
-
-### auth-middleware.ts
-
-Implementar la lógica completa de validación JWT (descrita en sección Auth Middleware).
-
 ## Test Links
 
-*(No hay tests existentes aún. Cuando se agreguen, enlazarlos aquí con `[@test]`.)*
+- `[@test] ../../../test/password-reset.logic.test.ts` (BR-AUTH-11)

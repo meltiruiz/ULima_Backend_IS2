@@ -43,7 +43,7 @@ specs/features/<feature>/<feature>.spec.md
 3. Curriculum: US03, US04.
 4. Grades: US06, US07.
 5. Schedule: US09.
-6. Course Detail: US13, US14.
+6. Course Detail: US13, US14, US17.
 7. Alerts: US15.
 8. Section Management: US16, US17, US18.
 

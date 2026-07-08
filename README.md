@@ -58,8 +58,8 @@ El backend debe usar estas tablas como fuente de verdad:
 Reglas importantes:
 
 - `app_user` solo representa cuentas que inician sesión.
-- `teacher` es información referencial; no hay login docente.
-- Roles válidos de app: `student`, `delegate`, `subdelegate`.
+- `teacher` puede iniciar sesión si está vinculado a `app_user` vía `teacher.user_id` (HU18).
+- Roles válidos de app: `student`, `delegate`, `subdelegate`, `teacher`.
 - Delegado/subdelegado se deriva desde `section_representative`, no desde `app_user`.
 - `student_score` guarda notas personales no oficiales.
 - `academic_risk`: avance evaluado mayor a 55% y promedio personal menor a 10.5.
@@ -96,6 +96,7 @@ Sí hacer:
 | `course-detail` | Detalle de sección, asesorías, anuncios y contactos. |
 | `alerts` | Alertas personales de riesgo académico y alta carga. |
 | `section-management` | Funciones de delegado/subdelegado. |
+| `advising` | Gestión de asesorías extra para docentes (HU18). |
 
 ## Specs
 

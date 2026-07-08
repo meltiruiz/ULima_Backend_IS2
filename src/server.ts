@@ -39,6 +39,7 @@ app.get("/", (c) => {
       "/course-detail",
       "/alerts",
       "/section-management",
+      "/advising",
     ],
   });
 });
