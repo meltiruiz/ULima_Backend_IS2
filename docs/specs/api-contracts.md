@@ -31,6 +31,10 @@ Contrato REST local del backend ULima++. Mantener alineado manualmente con `ULim
 }
 ```
 
+- `GET /version`
+  - Response: `{ "commit": "string", "ref": "string|null", "deployment": "string|null" }`
+  - Expone el commit desplegado (Vercel inyecta `VERCEL_GIT_COMMIT_SHA`).
+
 ## Auth
 
 ## Public

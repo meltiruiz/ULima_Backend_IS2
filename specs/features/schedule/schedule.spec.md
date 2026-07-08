@@ -3,6 +3,7 @@ name: Schedule
 description: Academic schedule, evaluations calendar mapping, and weekly load calculations.
 targets:
   - ../../../src/modules/schedule/**
+  - ../../../src/shared/middleware/auth-middleware.ts
 ---
 
 # Schedule

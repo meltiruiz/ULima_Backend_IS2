@@ -4,16 +4,16 @@ This index connects real user stories, product requirements, backend modules, an
 
 | Priority | Feature | Spec | User Stories | Requirements | Backend target | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| 0 | Platform Runtime | `specs/features/platform-runtime/platform-runtime.spec.md` | N/A | Deploy runtime compatibility | `src/server.ts`, root config files | Proposed for Vercel serverless migration |
-| 1 | Auth | `specs/features/auth/auth.spec.md` | US01, US02 | R1, R2, RNF6, RNF7 | `src/modules/auth` | Rewrite first; architecture scaffold ready, endpoint implementation pending |
-| 2 | Academic Profile | `specs/features/academic-profile/academic-profile.spec.md` | US05 | R12, R13 | `src/modules/academic-profile` | Rewrite second; architecture scaffold ready, endpoint implementation pending |
-| 3 | Curriculum | `specs/features/curriculum/curriculum.spec.md` | US03, US04 | R4, R5, R10, R11 | `src/modules/curriculum` | Rewrite third; architecture scaffold ready, endpoint implementation pending |
-| 4 | Grades | `specs/features/grades/grades.spec.md` | US06, US07 | R6, R9 | `src/modules/grades` | Rewrite fourth; architecture scaffold ready, endpoint implementation pending |
-| 5 | Schedule | `specs/features/schedule/schedule.spec.md` | US09 | R19 | `src/modules/schedule` | Rewrite fifth; architecture scaffold ready, endpoint implementation pending |
-| 6 | Course Detail | `specs/features/course-detail/course-detail.spec.md` | US13, US14 | R20 | `src/modules/course-detail` | Rewrite sixth; architecture scaffold ready, endpoint implementation pending |
-| 7 | Alerts | `specs/features/alerts/alerts.spec.md` | US15 | R15, R16, R22, R23 | `src/modules/alerts` | Rewrite seventh; architecture scaffold ready, endpoint implementation pending |
-| 8 | Section Management | `specs/features/section-management/section-management.spec.md` | US16, US17, US18 | R14, R17, R18, R21 | `src/modules/section-management` | Rewrite eighth; architecture scaffold ready, endpoint implementation pending |
-| 9 | Advising (docentes/JP) | `specs/features/advising/advising.spec.md` | HU18 | Rol docente, asesorías extra, RSVP/conteo | `src/modules/advising`, `src/modules/course-detail`, `auth-middleware.ts`, `schema.ts` | En implementación (Release 2); requiere migración 0004 aprobada antes de aplicar |
+| 0 | Platform Runtime | `specs/features/platform-runtime/platform-runtime.spec.md` | N/A | Deploy runtime compatibility | `src/server.ts`, root config files | Completado |
+| 1 | Auth | `specs/features/auth/auth.spec.md` | US01, US02, HU20 | R1, R2, RNF6, RNF7 | `src/modules/auth` | Implementado |
+| 2 | Academic Profile | `specs/features/academic-profile/academic-profile.spec.md` | US05 | R12, R13 | `src/modules/academic-profile` | Implementado |
+| 3 | Curriculum | `specs/features/curriculum/curriculum.spec.md` | US03, US04 | R4, R5, R10, R11 | `src/modules/curriculum` | Implementado |
+| 4 | Grades | `specs/features/grades/grades.spec.md` | US06, US07 | R6, R9 | `src/modules/grades` | Implementado (con deuda técnica: SQL en rutas) |
+| 5 | Schedule | `specs/features/schedule/schedule.spec.md` | US09 | R19 | `src/modules/schedule` | Implementado |
+| 6 | Course Detail | `specs/features/course-detail/course-detail.spec.md` | US13, US14, US17 | R20 | `src/modules/course-detail` | Implementado (con deuda técnica: SQL en rutas) |
+| 7 | Alerts | `specs/features/alerts/alerts.spec.md` | US15 | R15, R16, R22, R23 | `src/modules/alerts` | Implementado |
+| 8 | Section Management | `specs/features/section-management/section-management.spec.md` | US16, US17, US18 | R14, R17, R18, R21 | `src/modules/section-management` | Implementado (con deuda técnica: SQL en rutas) |
+| 9 | Advising (docentes/JP) | `specs/features/advising/advising.spec.md` | HU18 | Rol docente, asesorías extra, RSVP/conteo | `src/modules/advising`, `src/modules/course-detail`, `auth-middleware.ts`, `schema.ts` | Implementado |
 
 ## Workflow
 

@@ -64,6 +64,7 @@ Tablas que no pertenecen al esquema definitivo:
 - `student`
 - `delegate`
 - `subdelegate`
+- `teacher` (HU18 — desde `app_user.user_id` vinculado a `teacher.user_id`)
 
 `delegate` y `subdelegate` se derivan desde filas activas de `section_representative`. Si un estudiante califica para ambos, `delegate` tiene precedencia.
 
@@ -117,7 +118,7 @@ Shared:
 - `src/events`: EventBus base. Observers reales se agregan solo con spec aprobada.
 - `src/db`: schema definitivo y cliente Drizzle.
 
-## Prioridad Recomendada De Specs
+## Prioridad Recomendada De Specs (histórica — todas implementadas)
 
 1. Auth.
 2. Academic profile.
@@ -127,6 +128,7 @@ Shared:
 6. Course detail.
 7. Alerts.
 8. Section management.
+9. Advising (HU18).
 
 ## Decisiones No Negociables
 
