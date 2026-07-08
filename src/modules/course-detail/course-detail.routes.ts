@@ -4,7 +4,9 @@ import { sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { authMiddleware, requireRole, STUDENT_ROLES } from "../../shared/middleware/auth-middleware.js";
 
-const dayName = (day: number) => ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"][day - 1] ?? "Por definir";
+const dayName = (day: number) =>
+  ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"][day - 1] ?? "Por definir";
+
 const splitName = (fullName: string) => {
   if (fullName.includes(",")) {
     const parts = fullName.split(",");
@@ -33,7 +35,7 @@ const splitName = (fullName: string) => {
   };
 };
 
-export const createCourseDetailRoutes = (_controller: CourseDetailController) => {
+export const createCourseDetailRoutes = (controller: CourseDetailController) => {
   const app = new Hono();
 
   // Todas las rutas de detalle de curso exponen datos académicos sensibles
@@ -143,53 +145,9 @@ export const createCourseDetailRoutes = (_controller: CourseDetailController) =>
     return c.json({ section: data.secciones.find((section) => section.idSeccion === sectionId) ?? null });
   });
 
-  app.get("/sections/:sectionId/announcements", async (c) => {
-    const sectionId = Number(c.req.param("sectionId"));
-    try {
-      const rows = await db.execute(sql`
-        select
-          a.id,
-          a.title,
-          a.message,
-          a.published_at,
-          au.code as autor_code,
-          au.full_name,
-          au.institutional_email,
-          sr.position
-        from announcement a
-        join section_representative sr on sr.id = a.section_representative_id
-        join enrollment e on e.id = sr.enrollment_id
-        join student st on st.id = e.student_id
-        join app_user au on au.id = st.user_id
-        where sr.section_id = ${sectionId}
-          and a.is_active = true
-        order by a.published_at desc
-      `) as unknown as Array<any>;
+  app.get("/sections/:sectionId/announcements", (c) => controller.getAnnouncements(c));
 
-      return c.json({
-        anuncios: rows.map((row) => ({
-          id: String(row.id),
-          idSeccion: String(sectionId),
-          titulo: row.title,
-          mensaje: row.message,
-          fecha: row.published_at?.toISOString?.() ?? String(row.published_at ?? ""),
-          autorCode: row.autor_code,
-          autor: {
-            code: row.autor_code,
-            ...splitName(row.full_name),
-            email: row.institutional_email,
-            role: row.position === 'delegate' ? 'DELEGADO' : row.position === 'subdelegate' ? 'SUBDELEGADO' : 'estudiante',
-            career_id: null,
-            currentCycle: "2026-1",
-            setupComplete: true,
-          },
-        })),
-      });
-    } catch (e) {
-      console.error(`DB Error in /sections/${sectionId}/announcements`, e);
-      return c.json({ anuncios: [] });
-    }
-  });
+  app.get("/sections/:sectionId/advising", (c) => controller.getAdvising(c));
 
   app.get("/sections/:sectionId/advising", async (c) => {
     const sectionId = Number(c.req.param("sectionId"));

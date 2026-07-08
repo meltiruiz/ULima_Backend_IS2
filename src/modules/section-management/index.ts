@@ -14,5 +14,5 @@ export const sectionManagementRoutes = createSectionManagementRoutes(sectionMana
 export { SectionManagementController } from "./section-management.controller.js";
 export { SectionManagementRepository } from "./section-management.repository.js";
 export { SectionManagementService } from "./section-management.service.js";
-export { createAnnouncementSchema } from "./section-management.schemas.js";
-export type { RepresentativePosition } from "./section-management.types.js";
+export * from "./section-management.schemas.js";
+export * from "./section-management.types.js";

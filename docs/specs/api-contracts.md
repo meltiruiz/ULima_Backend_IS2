@@ -345,12 +345,16 @@ Notas:
 
 ## Section Management
 
-- `GET /section-management/representatives` — **IMPLEMENTADO** (único endpoint real). Lista los representantes (delegado/subdelegado) activos por sección.
+- `GET /section-management/representatives` — lista las secciones donde el alumno autenticado es delegado/subdelegado activo. Roles de alumno. Response: `{ "sectionRepresentatives": [{ "id": "1", "enrollmentId": "10", "idSeccion": "754", "codigoSeccion": "754", "idCurso": "45", "nombreCurso": "Sistemas de Inteligencia Empresarial", "role": "delegado", "alumnosMatriculados": 32 }] }`.
+- `GET /section-management/sections/:sectionId/announcements` — lista anuncios activos de la sección para su delegado/subdelegado, ordenados por fecha descendente. Response: `{ "anuncios": Announcement[] }`.
+- `POST /section-management/sections/:sectionId/announcements` — crea un anuncio en `announcement`. Rol requerido: `delegate`/`subdelegate` activo de la sección. Body: `{ "title": "string<=150", "message": "string<=5000" }`. Response `201`: `{ "message": "Anuncio publicado correctamente.", "anuncio": Announcement }`.
+- `PUT /section-management/announcements/:id` — edita título y mensaje de un anuncio propio. Body: `{ "title": "string<=150", "message": "string<=5000" }`. Response: `{ "message": "Cambios guardados correctamente.", "anuncio": Announcement }`.
+- `DELETE /section-management/announcements/:id` — soft delete (`is_active=false`) de un anuncio propio. Response: `{ "message": "Anuncio eliminado correctamente." }`.
 - ~~`GET /section-management/me/sections`~~ — **NO IMPLEMENTADO**.
-- ~~`POST /section-management/sections/:sectionId/announcements`~~ — **NO IMPLEMENTADO** (HU10, pendiente).
 - ~~`GET /section-management/sections/:sectionId/progress`~~ — **NO IMPLEMENTADO** (HU11, pendiente).
 
 Notas:
 
-- **Estado real**: el módulo solo expone `GET /representatives`. Los endpoints de **registro de anuncios (HU10)** y **estadísticas/progreso (HU11)** están documentados pero **no implementados** — ambas HU siguen pendientes (ver tablero). Existe scaffolding sin uso (`createAnnouncementSchema`, tabla `announcement`, observer stub).
-- Cuando se implementen: solo `delegate`/`subdelegate` activos en `section_representative`; los anuncios escriben en `announcement`; las métricas agregadas no exponen notas individuales.
+- Anuncios: el backend deriva `section_representative_id` desde el JWT del alumno y la sección; el frontend no lo envía.
+- Errores principales: `403 SECTION_FORBIDDEN`, `403 ANNOUNCEMENT_FORBIDDEN`, `404 ANNOUNCEMENT_NOT_FOUND`, `400 INVALID_REQUEST_BODY`.
+- Estadísticas/progreso de sección siguen fuera de alcance de esta implementación y no exponen notas individuales.
