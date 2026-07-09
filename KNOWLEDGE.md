@@ -138,3 +138,10 @@ Shared:
 - No lógica fuera de spec.
 - No endpoints fuera de `docs/specs/api-contracts.md`.
 - No modificar `src/db` salvo cambio de BD aprobado.
+
+## Troubleshooting
+
+### Vercel `FUNCTION_INVOCATION_FAILED` (ERR_REQUIRE_ESM with jose/jwks-rsa)
+**Síntoma**: Al desplegar en Vercel, el backend crashea inmediatamente con `Error [ERR_REQUIRE_ESM]: require() of ES Module /var/task/node_modules/jose/dist/webapi/index.js from /var/task/node_modules/jwks-rsa/src/utils.js not supported.`
+**Causa**: Las versiones muy recientes de `firebase-admin` (v13, v14) usan dependencias internas (`jwks-rsa` > `jose`) que entran en conflicto con la forma en que Vercel empaqueta módulos ESM (`type: "module"` en `package.json`).
+**Solución**: Se debe hacer un downgrade de `firebase-admin` a la versión `12.1.0` (o `12.x`), la cual utiliza una versión de `jose` compatible con CommonJS/ESM mixto en entornos Serverless de Vercel.

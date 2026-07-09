@@ -1,6 +1,8 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
+import { getDatabase } from "firebase-admin/database";
 import { config } from "../config/app-config.js";
+import type { ChatParticipant } from "../modules/chat/chat.types.js";
 
 class FirebaseService {
   private static instance: FirebaseService;
@@ -50,21 +52,46 @@ class FirebaseService {
     }
   }
 
-  public async generateCustomToken(userId: number, role: string): Promise<string> {
+  public async generateCustomToken(
+    uid: string,
+    claims: Record<string, unknown> = {},
+  ): Promise<string> {
     if (!this.initialized) {
       throw new Error("Firebase Admin SDK is not initialized.");
     }
 
-    const uid = `user_${userId}`;
-    const additionalClaims = {
-      role,
-    };
-
     try {
-      return await getAuth().createCustomToken(uid, additionalClaims);
+      return await getAuth().createCustomToken(uid, claims);
     } catch (error) {
       console.error("Error creating custom token:", error);
       throw new Error("Failed to generate Firebase custom token");
+    }
+  }
+
+  public async upsertChatMember(participant: ChatParticipant): Promise<void> {
+    if (!this.initialized) {
+      throw new Error("Firebase Admin SDK is not initialized.");
+    }
+
+    if (!config.firebase.databaseUrl) {
+      throw new Error("Firebase Realtime Database URL is not configured.");
+    }
+
+    try {
+      await getDatabase()
+        .ref(`members/${participant.sectionId}/${participant.uid}`)
+        .set({
+          displayName: participant.displayName,
+          role: participant.role,
+          roleLabel: participant.roleLabel,
+          moderator: participant.isModerator,
+          weight: participant.weight,
+          updatedAt: Date.now(),
+          expiresAt: Date.now() + 60 * 60 * 1000,
+        });
+    } catch (error) {
+      console.error("Error writing chat member:", error);
+      throw new Error("Failed to register chat member");
     }
   }
 }

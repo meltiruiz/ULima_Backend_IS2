@@ -1,22 +1,31 @@
 import { Hono } from "hono";
 import { authMiddleware } from "../../shared/middleware/auth-middleware.js";
+import { validateJson } from "../../shared/middleware/validate-dto.js";
 import type { ChatController } from "./chat.controller.js";
+import { chatTokenSchema } from "./chat.schemas.js";
 
 export const createChatRoutes = (controller: ChatController) => {
-  const app = new Hono<{ Variables: { userId: string; role: string } }>();
+  const app = new Hono<{
+    Variables: {
+      userId: number;
+      studentId?: number;
+      teacherId?: number;
+      role: string;
+    };
+  }>();
 
   app.use("*", authMiddleware);
 
-  app.get("/firebase-token", async (c) => {
-    const userId = Number(c.get("userId"));
-    const role = c.get("role");
-    
-    try {
-      const result = await controller.getFirebaseToken(userId, role);
-      return c.json(result);
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
-    }
+  app.post("/token", async (c) => {
+    const body = await validateJson(c, chatTokenSchema);
+
+    return c.json(await controller.createFirebaseToken({
+      sectionId: body.sectionId,
+      userId: c.get("userId"),
+      studentId: c.get("studentId"),
+      teacherId: c.get("teacherId"),
+      role: c.get("role"),
+    }));
   });
 
   return app;
