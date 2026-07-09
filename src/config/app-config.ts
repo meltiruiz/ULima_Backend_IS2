@@ -13,6 +13,12 @@ export const config = {
     resendApiKey: env.RESEND_API_KEY,
     resendFrom: env.RESEND_FROM,
   },
+  firebase: {
+    projectId: env.FIREBASE_PROJECT_ID,
+    clientEmail: env.FIREBASE_CLIENT_EMAIL,
+    privateKey: env.FIREBASE_PRIVATE_KEY,
+    databaseUrl: env.FIREBASE_DATABASE_URL,
+  },
   server: {
     port: env.PORT,
     env: env.NODE_ENV,
