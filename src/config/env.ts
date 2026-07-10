@@ -27,7 +27,7 @@ const envSchema = z.object({
     const n = parseInt(v ?? "3", 10);
     return Number.isInteger(n) && n > 0 ? n : 3;
   }),
-  // Firebase Admin SDK (HU25 chat). Opcionales para no romper módulos que no
+  // Firebase Admin SDK (HU23 chat). Opcionales para no romper módulos que no
   // usan chat; el servicio de chat debe validar presencia antes de firmar tokens.
   FIREBASE_PROJECT_ID: z.string().optional().default(""),
   FIREBASE_CLIENT_EMAIL: z.string().email().optional().or(z.literal("")).default(""),
