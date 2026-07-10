@@ -358,3 +358,15 @@ Notas:
 - Anuncios: el backend deriva `section_representative_id` desde el JWT del alumno y la sección; el frontend no lo envía.
 - Errores principales: `403 SECTION_FORBIDDEN`, `403 ANNOUNCEMENT_FORBIDDEN`, `404 ANNOUNCEMENT_NOT_FOUND`, `400 INVALID_REQUEST_BODY`.
 - Estadísticas/progreso de sección siguen fuera de alcance de esta implementación y no exponen notas individuales.
+
+## Chat (HU23 — chat en vivo por sección)
+
+Puente de auth entre el JWT propio y Firebase para el chat en vivo (Firebase RTDB). Detalle y reglas en `specs/features/chat/chat.spec.md`. Puede pedir token cualquier miembro de la sección (alumno/delegado/subdelegado con rol `student` en el JWT, o docente/JP con rol `teacher`); un no-miembro recibe `403`.
+
+- `POST /chat/token` — verifica el JWT propio, deriva el rol/pertenencia del solicitante en la sección (desde `enrollment` + `section_representative`, o `section.teacher_id`/`jp_id`), escribe el espejo de membresía `/members/{sectionId}/{uid}` en RTDB (el backend es el ÚNICO que lo escribe) y firma un **custom token** de Firebase (`uid = app_user.id`). Body: `{ "sectionId": number }` (acepta string; se coacciona con `z.coerce.number()`). Response: `{ "token", "uid", "displayName", "role", "roleLabel", "isModerator", "weight" }`. `role ∈ {teacher, jp, delegate, subdelegate, student}`; `weight` = 100/90/70/60/10; `isModerator` = true salvo alumno raso.
+- Error principal: `403 CHAT_SECTION_FORBIDDEN` (no pertenece a la sección, o el `userId` del JWT no coincide con el participante).
+
+Notas:
+
+- Las reglas de seguridad de RTDB (lectura/escritura/borrado por membresía) viven en Firebase y se validan con **Firebase Emulator** (fuera de la suite Bun).
+- Requiere `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, `FIREBASE_DATABASE_URL` en el entorno; si faltan, el servicio no firma tokens (chat deshabilitado). ⚠️ Fijar `firebase-admin@12.1.0` (v13/v14 rompen Vercel con `ERR_REQUIRE_ESM`).
