@@ -56,6 +56,19 @@ export const sendPasswordResetEmail = async ({ to, otp, expiresMinutes }: SendPa
     return;
   }
 
+  const payload: Record<string, unknown> = {
+    from: config.email.resendFrom,
+    to,
+    subject: "ULima+ | Código para restablecer tu contraseña",
+    html: buildPasswordResetHtml(otp, expiresMinutes),
+    text: buildPasswordResetText(otp, expiresMinutes),
+  };
+  // Reply-To a un buzón real (si está configurado): permite responder el correo,
+  // lo que mejora la entregabilidad frente al patrón "solo no-reply".
+  if (config.email.replyTo) {
+    payload.reply_to = config.email.replyTo;
+  }
+
   try {
     const response = await fetch(RESEND_EMAILS_URL, {
       method: "POST",
@@ -63,13 +76,7 @@ export const sendPasswordResetEmail = async ({ to, otp, expiresMinutes }: SendPa
         Authorization: `Bearer ${config.email.resendApiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        from: config.email.resendFrom,
-        to,
-        subject: "ULima+ | Código para restablecer tu contraseña",
-        html: buildPasswordResetHtml(otp, expiresMinutes),
-        text: buildPasswordResetText(otp, expiresMinutes),
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {

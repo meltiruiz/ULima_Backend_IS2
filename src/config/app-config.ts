@@ -12,6 +12,7 @@ export const config = {
   email: {
     resendApiKey: env.RESEND_API_KEY,
     resendFrom: env.RESEND_FROM,
+    replyTo: env.RESEND_REPLY_TO,
   },
   firebase: {
     projectId: env.FIREBASE_PROJECT_ID,
