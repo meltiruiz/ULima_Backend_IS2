@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import type { db } from "../../db/index.js";
-import type { ChatParticipant, ChatParticipantRole } from "./chat.types.js";
+import { buildParticipant, studentRoleFromPosition } from "./chat.logic.js";
+import type { ChatParticipant } from "./chat.types.js";
 
 type StudentChatRow = {
   user_id: number;
@@ -13,57 +14,6 @@ type TeacherChatRow = {
   full_name: string;
   section_role: "teacher" | "jp";
 };
-
-const roleLabel = (role: ChatParticipantRole) => {
-  switch (role) {
-    case "teacher":
-      return "Profesor";
-    case "jp":
-      return "Jefe de Práctica";
-    case "delegate":
-      return "Delegado";
-    case "subdelegate":
-      return "Subdelegado";
-    case "student":
-      return "Alumno";
-  }
-};
-
-const roleWeight = (role: ChatParticipantRole) => {
-  switch (role) {
-    case "teacher":
-      return 100;
-    case "jp":
-      return 90;
-    case "delegate":
-      return 70;
-    case "subdelegate":
-      return 60;
-    case "student":
-      return 10;
-  }
-};
-
-const isModeratorRole = (role: ChatParticipantRole) =>
-  role === "teacher" ||
-  role === "jp" ||
-  role === "delegate" ||
-  role === "subdelegate";
-
-const toParticipant = (
-  row: { user_id: number; full_name: string },
-  sectionId: number,
-  role: ChatParticipantRole,
-): ChatParticipant => ({
-  uid: String(row.user_id),
-  userId: Number(row.user_id),
-  sectionId,
-  displayName: row.full_name,
-  role,
-  roleLabel: roleLabel(role),
-  isModerator: isModeratorRole(role),
-  weight: roleWeight(role),
-});
 
 export class ChatRepository {
   constructor(readonly database: typeof db) {}
@@ -94,8 +44,8 @@ export class ChatRepository {
     const row = rows[0];
     if (!row) return null;
 
-    const role = row.position ?? "student";
-    return toParticipant(row, sectionId, role);
+    const role = studentRoleFromPosition(row.position);
+    return buildParticipant(row, sectionId, role);
   }
 
   async findTeacherParticipant(
@@ -121,7 +71,7 @@ export class ChatRepository {
     const row = rows[0];
     if (!row?.section_role) return null;
 
-    return toParticipant(row, sectionId, row.section_role);
+    return buildParticipant(row, sectionId, row.section_role);
   }
 }
 

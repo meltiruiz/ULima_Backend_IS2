@@ -1,6 +1,7 @@
 import { db } from "../../db/index.js";
 import { firebaseService } from "../../services/firebase.service.js";
 import { HttpError } from "../../shared/errors/http-error.js";
+import { canIssueToken } from "./chat.logic.js";
 import { ChatRepository } from "./chat.repository.js";
 
 export class ChatController {
@@ -21,7 +22,7 @@ export class ChatController {
         ? null
         : await this.repository.findStudentParticipant(input.studentId, input.sectionId);
 
-    if (!participant || participant.userId !== input.userId) {
+    if (!canIssueToken(participant, input.userId)) {
       throw new HttpError(
         403,
         "No perteneces a esta sección o no tienes acceso al chat.",
