@@ -21,6 +21,11 @@ const envSchema = z.object({
   // onboarding@resend.dev (Gmail lo mira con más sospecha). En Vercel debe estar
   // igualmente seteada RESEND_FROM con este mismo valor.
   RESEND_FROM: z.string().optional().default("ULima+ <no-reply@mail.grupo5app.lat>"),
+  // Dirección de respuesta (Reply-To). Conviene un buzón REAL y monitoreado:
+  // que los correos puedan responderse mejora la entregabilidad (Gmail toma la
+  // interacción como señal positiva) y evita el patrón "solo no-reply". Si está
+  // vacía, no se agrega Reply-To. Setear también en Vercel.
+  RESEND_REPLY_TO: z.string().optional().default(""),
   // Máximo de códigos de restablecimiento por usuario por hora. Default 3
   // (anti-abuso); subirlo solo temporalmente en períodos de prueba/QA.
   PASSWORD_RESET_MAX_PER_HOUR: z.string().optional().transform((v) => {
