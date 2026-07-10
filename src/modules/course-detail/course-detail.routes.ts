@@ -41,7 +41,7 @@ export const createCourseDetailRoutes = (controller: CourseDetailController) => 
   // Todas las rutas de detalle de curso exponen datos académicos sensibles
   // (secciones, docentes, matrículas, contactos): requieren JWT válido de alumno.
   app.use("*", authMiddleware);
-  app.use("*", requireRole(...STUDENT_ROLES));
+  app.use("*", requireRole(...STUDENT_ROLES, "teacher"));
 
   app.get("/sections", async (c) => {
     try {
