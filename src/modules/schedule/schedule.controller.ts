@@ -18,4 +18,20 @@ export class ScheduleController {
     const studentId = Number(c.get("studentId"));
     return c.json(await this.service.getWeeklyLoad(studentId));
   }
+
+  async getTeacherSessions(c: Context) {
+    const teacherId = Number(c.get("teacherId"));
+    return c.json(await this.service.getTeacherSessions(teacherId));
+  }
+
+  async getTeacherAssessments(c: Context) {
+    const teacherId = Number(c.get("teacherId"));
+    return c.json(await this.service.getTeacherAssessments(teacherId));
+  }
+
+  async getTeacherAssessmentsStatus(c: Context) {
+    const teacherId = Number(c.get("teacherId"));
+    const sectionId = Number(c.req.param("sectionId"));
+    return c.json(await this.service.getTeacherAssessmentsStatus(teacherId, sectionId));
+  }
 }
