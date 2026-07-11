@@ -50,7 +50,7 @@ Diseño de origen: `~/Desktop/ULIMA++/DISENO_PROFESORES.md` (aprobado 2026-07-05
 
 ### BR-ADV-04: RSVP (tabla compartida con HU17)
 - Tabla nueva `advising_rsvp (id, advising_session_id FK, student_id FK, created_at, UNIQUE(advising_session_id, student_id))`.
-- HU18 solo la **lee** (conteo y lista de asistentes). Los endpoints de escritura del alumno (confirmar/cancelar) son de HU17 y se especificarán allí.
+- HU18 solo la **lee** (conteo y lista de asistentes). Los endpoints de escritura del alumno (confirmar/cancelar) son de **HU17** → BR-ADV-22 (viven en `course-detail`, no en `advising`, porque este módulo está gateado a `teacher`).
 
 ## Endpoints — módulo `src/modules/advising/` (capas limpias)
 
@@ -97,9 +97,21 @@ Asesorías del docente autenticado (recurrentes + extras), con conteo de confirm
 ## Extensiones a course-detail (vista del alumno)
 
 ### BR-ADV-20: GET /course-detail/sections/:sectionId/advising
-Cada item de `asesorias` agrega: `"kind": "recurring"|"extra"`, `"fecha": "YYYY-MM-DD"|null`, `"dictanteRol": "Profesor"|"JP"`, `"asistentes": number`. Los campos existentes no cambian (compatibilidad con APKs viejos).
+Cada item de `asesorias` agrega: `"kind": "recurring"|"extra"`, `"fecha": "YYYY-MM-DD"|null`, `"dictanteRol": "Profesor"|"JP"`, `"asistentes": number`, y **`"myRsvp": boolean`** (HU17). Los campos existentes no cambian (compatibilidad con APKs viejos).
 - `dictanteRol`: `cas.teacher_id = sec.jp_id` → "JP"; si no → "Profesor". (Caso 8.)
 - Además del filtro actual, se incluyen las extras de la sección; las extras con `session_date` pasada no se listan.
+- Se resuelve por las capas `controller → service → repository` (no como handler inline). `myRsvp` deriva de un `exists` sobre `advising_rsvp` para el `studentId` del token; con un token docente (sin `studentId`) es siempre `false`.
+  `[@test] ../../../test/course-detail.rsvp.test.ts` (mapeo de myRsvp true/false y defaults)
+
+### BR-ADV-22: RSVP del alumno (HU17) — POST/DELETE /course-detail/advising/:sessionId/rsvp
+Confirmar (`POST`) y cancelar (`DELETE`) la asistencia del alumno autenticado a una asesoría. Historia: HU17 (frontend #87, backend #29, frontend #88).
+- El `studentId` sale del JWT (`c.get('studentId')`), **nunca** del body. Un token docente no lleva `studentId` → `403 ADVISING_RSVP_STUDENT_ONLY`.
+  `[@test] ../../../test/course-detail.rsvp.test.ts` (docente → 403)
+- **Confirmar**: solo si el alumno participa de la asesoría (tiene matrícula activa en una sección que la ve: mismo `course_offering_id`, y si `cas.section_id` está fijo, esa sección). Si no participa → `404 ADVISING_SESSION_NOT_FOUND`. Inserta con `ON CONFLICT DO NOTHING` (idempotente: confirmar dos veces = 1 fila).
+  `[@test] ../../../test/course-detail.rsvp.test.ts` (participa/no participa; idempotencia)
+- **Cancelar**: borra el RSVP propio; idempotente (cancelar sin confirmación previa es no-op, `200`).
+  `[@test] ../../../test/course-detail.rsvp.test.ts` (cancelar idempotente)
+- **Response 200** (ambos): `{ "id": string, "asistentes": number, "myRsvp": boolean }` con el conteo recalculado tras la operación (`myRsvp` = `true` en confirmar, `false` en cancelar).
 
 ### BR-ADV-21: GET /course-detail/sections/:sectionId/contacts
 Agrega clave top-level `"jefePractica": { "code", "lastName", "firstName" } | null` (desde `section.jp_id`), entre `docente` y `alumnos`. (Caso 8: JP visible en Contactos.)

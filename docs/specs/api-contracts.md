@@ -313,13 +313,17 @@ Notas:
 - `GET /course-detail/sections/:sectionId/announcements`
 - `GET /course-detail/sections/:sectionId/advising`
 - `GET /course-detail/sections/:sectionId/contacts`
+- `POST /course-detail/advising/:sessionId/rsvp` (HU17)
+- `DELETE /course-detail/advising/:sessionId/rsvp` (HU17)
 
 Notas:
 
-- Solo roles de alumno (`requireRole('student','delegate','subdelegate')`); un token docente recibe `403 FORBIDDEN`.
+- Solo roles de alumno (`requireRole('student','delegate','subdelegate')`); un token docente recibe `403 FORBIDDEN` (salvo `GET /advising` del detalle, permitido también a `teacher` para cargar contactos).
 - El estudiante solo ve secciones donde está matriculado.
 - Asesorías visibles: `section_id IS NULL` para el curso ofertado o `section_id` igual a su sección. Se incluyen las extras (`kind='extra'`) de la sección cuya `session_date` no sea pasada.
 - Cada asesoría agrega (HU18): `kind` (`recurring`/`extra`), `fecha` (`YYYY-MM-DD`, solo extras; `null` en recurrentes), `dictanteRol` (`"Profesor"` o `"JP"` según sea `section.teacher_id` o `section.jp_id`), `asistentes` (conteo de `advising_rsvp`). Los campos previos (`id, courseId, docenteCode, docente, dia, inicio, fin, aula, zoom`) no cambian.
+- **HU17**: cada asesoría agrega `myRsvp` (`boolean`) — `true` si el alumno autenticado ya confirmó su asistencia; siempre `false` con un token docente.
+- **HU17 RSVP** (`POST`/`DELETE /course-detail/advising/:sessionId/rsvp`): confirma/cancela la asistencia del alumno autenticado (`studentId` del JWT, nunca del body). Ambos idempotentes (unique `(advising_session_id, student_id)`; cancelar sin confirmación es no-op). Response `200`: `{ id, asistentes, myRsvp }` con el conteo actualizado. Errores: `404 ADVISING_SESSION_NOT_FOUND` (el alumno no participa de esa asesoría: no tiene matrícula activa en una sección que la vea) en `POST`; `403 ADVISING_RSVP_STUDENT_ONLY` si el token es docente. Viven en `course-detail` (no en `advising`) porque el módulo `advising` está gateado a `teacher`.
 - Contactos agrega la clave top-level `jefePractica` (`{ code, lastName, firstName }` o `null`) desde `section.jp_id`, entre `docente` y `alumnos`.
 - Anuncios visibles solo si pertenecen a la sección del estudiante.
 
@@ -336,7 +340,7 @@ Rol requerido: `teacher` (`requireRole('teacher')`). Detalle y reglas en `specs/
 Notas:
 
 - Todo el módulo comparte la guarda defensiva `401 TEACHER_NOT_FOUND` (contexto sin `teacherId`; no ocurre tras `authMiddleware`+`requireRole('teacher')`).
-- Los endpoints de RSVP del alumno (`POST/DELETE /advising/sessions/:id/rsvp`) pertenecen a HU17 y se documentan en su spec; HU18 solo lee `advising_rsvp` (conteo/lista).
+- Los endpoints de RSVP del alumno (HU17) viven en el módulo de alumno `course-detail` (`POST/DELETE /course-detail/advising/:sessionId/rsvp`), **no** aquí: este módulo está gateado a `teacher`. HU18 solo lee `advising_rsvp` (conteo/lista de confirmados).
 
 ## Alerts
 
