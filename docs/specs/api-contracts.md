@@ -50,6 +50,12 @@ Contrato REST local del backend ULima++. Mantener alineado manualmente con `ULim
   - Request: `{ "code": "string", "password": "string" }`
   - Response: `{ "token": "string", "tokenType": "Bearer", "expiresIn": 86400, "user": User }`
   - HU18: si el `code` no es de un `student` pero sí de un `teacher` (vía `teacher.user_id`), inicia sesión como docente. El `user` docente es `{ id, teacherId, code, fullName, institutionalEmail, role: "teacher", teacherLabel: "Profesor"|"Jefe de Práctica", setupComplete: true }` (sin `studentId`). No exige matrícula activa. El JWT lleva `teacherId` en vez de `studentId`. El login de alumnos no cambia.
+- `POST /auth/google`
+  - Request: `{ "idToken": "string" }`
+  - Acepta `@aloe.ulima.edu.pe` para cuentas vinculadas a `student.user_id` y `@ulima.edu.pe` para cuentas vinculadas a `teacher.user_id`. No crea cuentas ni perfiles.
+  - Response: `{ "token": "string", "tokenType": "Bearer", "expiresIn": 86400, "user": User }`. El alumno conserva su shape y reglas de matrícula/representación. El docente recibe el mismo shape y JWT docente de `POST /auth/login`, sin exigir matrícula.
+  - En ambos casos se vincula `app_user.google_id`, se incrementa `tokenVersion` y se mantiene disponible el login con código/contraseña.
+  - Errores: `401 INVALID_TOKEN`, `401 USER_NOT_FOUND`, `403 INVALID_DOMAIN`; `403 NOT_ENROLLED` solo para alumnos.
 - `GET /auth/me`
   - Response: `{ "user": User }` (shape de estudiante o de docente según el rol del token).
 - `POST /auth/logout`
@@ -84,7 +90,7 @@ Contrato REST local del backend ULima++. Mantener alineado manualmente con `ULim
 }
 ```
 
-Errores de login: `401 USER_NOT_FOUND`, `401 INVALID_PASSWORD`, `403 NOT_ENROLLED`.
+Errores de login con código: `401 USER_NOT_FOUND`, `401 INVALID_PASSWORD`, `403 NOT_ENROLLED`. Errores adicionales de Google: `401 INVALID_TOKEN`, `403 INVALID_DOMAIN`.
 
 ## Academic Profile
 

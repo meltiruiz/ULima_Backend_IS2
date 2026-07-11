@@ -1,9 +1,10 @@
 ---
 name: Authentication
-description: Login, logout and session management with JWT for ULima++ students
+description: Login, logout and session management with JWT for ULima++ students and teachers
 targets:
   - ../../../src/modules/auth/**
   - ../../../src/shared/middleware/auth-middleware.ts
+  - ../../../test/auth.google-login.test.ts
 ---
 
 # Authentication
@@ -14,6 +15,7 @@ targets:
 | --- | --- |
 | US01 | Iniciar sesión con código y contraseña. |
 | US02 | Cerrar sesión. |
+| HU18 | Iniciar sesión como docente y acceder al flujo de asesorías. |
 | HU20 | Restablecer la contraseña con un código OTP enviado al correo institucional. |
 
 ## Business Rules
@@ -84,10 +86,21 @@ targets:
 - **Nunca** se devuelve un usuario "mock"/sintético (p. ej. `id = 0`, `code = "00000000"`) ni se firma un JWT en una ruta de error.
 - Aplica a `login`, `loginWithGoogle`, `me` y a la validación de `tokenVersion` del middleware.
 
-### BR-AUTH-10: Vinculación de Google SSO (google_id)
-- En `POST /auth/google`, tras verificar el `idToken` y ubicar al usuario por `institutional_email`, se **guarda el `sub` de Google** (ID único de la cuenta) en `app_user.google_id`.
+### BR-AUTH-10: Google SSO institucional y vinculación (`google_id`)
+- `POST /auth/google` normaliza el correo del token con `trim().toLowerCase()` y acepta cuentas institucionales cuyo valor termine exactamente en `@aloe.ulima.edu.pe` (alumno) o `@ulima.edu.pe` (docente). Cualquier otro dominio recibe `403 INVALID_DOMAIN`.
+  `[@test] ../../../test/auth.google-login.test.ts`
+- El dominio habilita el tipo de perfil que debe existir; no concede el rol por sí solo:
+  - `@aloe.ulima.edu.pe` debe resolver `app_user` ↔ `student.user_id` mediante `app_user.institutional_email` y conserva el flujo actual de matrícula activa y derivación de representante.
+  - `@ulima.edu.pe` debe resolver `app_user` ↔ `teacher.user_id` mediante `app_user.institutional_email`; devuelve rol `teacher`, no exige matrícula ni consulta `section_representative`, y deriva `teacherLabel` igual que el login con código y contraseña.
+  `[@test] ../../../test/auth.google-login.test.ts`
+- Una cuenta de dominio permitido que no tenga el perfil correspondiente vinculado recibe `401 USER_NOT_FOUND`. Google SSO no crea usuarios ni perfiles automáticamente.
+  `[@test] ../../../test/auth.google-login.test.ts`
+- Tras verificar el `idToken` y ubicar el perfil, se **guarda el `sub` de Google** (ID único de la cuenta) en `app_user.google_id`.
 - La columna `app_user.google_id` (`varchar(255)`, nullable) existe en la BD.
 - El guardado es idempotente (solo escribe si cambió) y no bloquea el login si el usuario ya estaba vinculado.
+- Ambos flujos incrementan `tokenVersion` y emiten el JWT correspondiente: el alumno lleva `studentId`; el docente lleva `teacherId`, `role: "teacher"` y no lleva `studentId`.
+  `[@test] ../../../test/auth.google-login.test.ts`
+- Este cambio no requiere migración ni seed y no altera el login con código y contraseña.
 
 ### BR-AUTH-11: Restablecimiento de contraseña (HU20)
 
@@ -117,7 +130,7 @@ targets:
 - **Middleware**: exige `studentId` entero cuando `role != "teacher"` y `teacherId` entero cuando `role == "teacher"`; setea `c.set("teacherId", …)` en ese caso. La validación de `tokenVersion` contra `app_user` es idéntica para ambos.
 - **Helper `requireRole(...roles)`** (en `src/shared/middleware/auth-middleware.ts`): middleware que corre después de `authMiddleware` y responde `403 FORBIDDEN` ("No tiene permisos para acceder a este recurso.") si el rol del contexto no está en la lista. Los módulos de alumno (`schedule`, `curriculum`, `alerts`, `grades`, `academic-profile`, `course-detail`, `section-management`) lo aplican con los roles de alumno; el módulo `advising` con `teacher`.
 - **`GET /auth/me`** con token docente: devuelve el shape docente (ver Endpoints), incluida la etiqueta `teacherLabel`.
-- **Google SSO sigue siendo solo de alumnos** en esta versión: la restricción de dominio `@aloe.ulima.edu.pe` y el `join student` de `findByEmail` no cambian. Un docente usa código/contraseña.
+- **Google SSO docente**: una cuenta `@ulima.edu.pe` vinculada a `teacher.user_id` puede iniciar sesión mediante `POST /auth/google` con el mismo shape y JWT docente definidos en esta regla. El acceso por código/contraseña permanece disponible.
 - **Login de estudiantes: cero cambios observables.** Criterio de aceptación del issue #30: smoke test de login de alumno antes del merge.
 - La respuesta de login/me para docentes incluye `"setupComplete": true` fijo (no aplica el setup de carrera) para no romper el routing del frontend.
 
@@ -178,9 +191,28 @@ Autentica al estudiante y devuelve un JWT.
   - `401` `INVALID_PASSWORD`: Contraseña incorrecta
   - `403` `NOT_ENROLLED`: El estudiante no tiene matrícula activa
 
+### POST /auth/google
+
+Canjea un `idToken` de Google por un JWT de ULima++ para un alumno o docente institucional preaprovisionado.
+
+- **Auth**: None (público)
+- **Request body**:
+  ```json
+  {
+    "idToken": "google-id-token"
+  }
+  ```
+- **Response** `200 OK`: el mismo envelope de `POST /auth/login`. `user` usa el shape de alumno para `@aloe.ulima.edu.pe` o el shape docente para `@ulima.edu.pe`.
+- **Errors**:
+  - `401` `INVALID_TOKEN`: el token no contiene un correo válido
+  - `401` `USER_NOT_FOUND`: el correo es institucional, pero no existe una cuenta con el perfil correspondiente
+  - `403` `INVALID_DOMAIN`: el correo no termina en uno de los dos dominios institucionales admitidos
+  - `403` `NOT_ENROLLED`: el alumno existe, pero no tiene matrícula activa; no aplica a docentes
+  `[@test] ../../../test/auth.google-login.test.ts`
+
 ### GET /auth/me
 
-Retorna los datos del estudiante autenticado.
+Retorna los datos del alumno o docente autenticado.
 
 - **Auth**: Bearer token
 - **Response** `200 OK`:

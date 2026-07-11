@@ -8,7 +8,7 @@ ULima++ es una app académica móvil para estudiantes de la Universidad de Lima.
 
 - App centrada en estudiantes; desde HU18 hay además un rol docente acotado (profesor/JP) que solo gestiona asesorías extra de sus secciones (módulo `advising`).
 - No hay pantallas admin.
-- Login docente (HU18): un `app_user` vinculado a `teacher.user_id` inicia sesión con código+contraseña y rol técnico `teacher`. No hay Google SSO docente; el aprovisionamiento de docentes/JP se hace por seed aprobado, no por producto.
+- Login docente (HU18): un `app_user` vinculado a `teacher.user_id` inicia sesión con código+contraseña o Google SSO `@ulima.edu.pe` y rol técnico `teacher`. El SSO no autoaprovisiona docentes/JP; la cuenta y su vínculo deben existir previamente.
 - PostgreSQL es la única fuente de verdad.
 - Los JSON del frontend son descartables y no se migran.
 - La base ya está creada; el backend no debe crear ni poblar tablas salvo cambios aprobados por spec (HU18 agrega columnas/tabla aditivas y un seed de docentes).
