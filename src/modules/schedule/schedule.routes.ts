@@ -16,6 +16,7 @@ export const createScheduleRoutes = (controller: ScheduleController) => {
   app.get("/teacher/sessions", requireRole("teacher"), (c) => controller.getTeacherSessions(c));
   app.get("/teacher/assessments", requireRole("teacher"), (c) => controller.getTeacherAssessments(c));
   app.get("/teacher/sections/:sectionId/assessments-status", requireRole("teacher"), (c) => controller.getTeacherAssessmentsStatus(c));
+  app.post("/teacher/sections/:sectionId/assessments/:assessmentId/notify-grades", requireRole("teacher"), (c) => controller.notifyGrades(c));
 
   return app;
 };

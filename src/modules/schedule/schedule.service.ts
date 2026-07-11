@@ -480,4 +480,38 @@ export class ScheduleService {
 
     return { assessments: list };
   }
+
+  async notifyGrades(teacherId: number, sectionId: number, assessmentId: number) {
+    const isOwner = await this.repository.checkSectionOwnership(sectionId, teacherId);
+    if (!isOwner) {
+      throw new HttpError(403, "No tiene permisos para acceder a esta sección.", "SECTION_FORBIDDEN");
+    }
+
+    const sectionInfo = await this.repository.findSectionDetails(sectionId);
+    if (!sectionInfo) {
+      throw new HttpError(404, "Sección no encontrada.", "SECTION_NOT_FOUND");
+    }
+
+    const assessmentInfo = await this.repository.findAssessmentDetails(assessmentId);
+    if (!assessmentInfo) {
+      throw new HttpError(404, "Evaluación no encontrada.", "ASSESSMENT_NOT_FOUND");
+    }
+
+    const students = await this.repository.findActiveStudentsBySectionId(sectionId);
+    
+    // Alerta de notas cargadas en su totalidad
+    const title = `Notas disponibles: ${sectionInfo.courseName}`;
+    const message = `Se han publicado las notas de la evaluación ${assessmentInfo.code}: ${assessmentInfo.name} de ${sectionInfo.courseName} (Sección ${sectionInfo.sectionCode}) en su totalidad.`;
+
+    let notifiedCount = 0;
+    for (const student of students) {
+      const exists = await this.repository.findAlertByTitle(student.studentId, title);
+      if (!exists) {
+        await this.repository.createAlert(student.studentId, "academic_risk", title, message);
+        notifiedCount++;
+      }
+    }
+
+    return { ok: true, notifiedCount };
+  }
 }
