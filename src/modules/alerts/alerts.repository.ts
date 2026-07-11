@@ -69,17 +69,35 @@ export class AlertsRepository {
   async getAlerts(studentId: number, since?: Date): Promise<StoredAlert[]> {
     const rows = await this.database.execute(sql`
       select 
-        id, 
-        student_id as "studentId", 
-        type, 
-        title, 
-        message, 
-        is_read as "isRead", 
-        created_at as "createdAt"
-      from alert
-      where student_id = ${studentId}
-        ${since ? sql`and created_at >= ${since.toISOString()}` : sql``}
-      order by created_at desc
+        al.id, 
+        al.student_id as "studentId", 
+        al.type, 
+        al.title, 
+        al.message, 
+        al.is_read as "isRead", 
+        al.created_at as "createdAt"
+      from alert al
+      where al.student_id = ${studentId}
+        ${since ? sql`and al.created_at >= ${since.toISOString()}` : sql``}
+        and (
+          al.type != 'academic_risk'
+          or (al.title not like 'Riesgo Académico: %' and al.title not like 'Alerta de inasistencias - %')
+          or exists (
+            select 1
+            from enrollment e
+            join section sec on sec.id = e.section_id
+            join course_offering co on co.id = sec.course_offering_id
+            join academic_period ap on ap.id = co.academic_period_id and ap.is_active = true
+            join course c on c.id = co.course_id
+            where e.student_id = al.student_id
+              and e.status = 'active'
+              and (
+                al.title = 'Riesgo Académico: ' || c.name
+                or al.title = 'Alerta de inasistencias - ' || c.name
+              )
+          )
+        )
+      order by al.created_at desc
     `) as unknown as any[];
 
     return rows.map(r => ({
