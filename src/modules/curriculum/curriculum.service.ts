@@ -50,7 +50,7 @@ export class CurriculumService {
     };
   }
 
-  async updateSimulation(studentId: number, curriculumCourseId: number, status: "planned" | "simulated_completed") {
+  async updateSimulation(studentId: number, curriculumCourseId: number, status: "planned" | "simulated_completed" | "simulated_available") {
     const curriculumId = await this.repository.findStudentCurriculumId(studentId);
     const courseExists = await this.repository.courseExistsInCurriculum(curriculumId, curriculumCourseId);
     if (!courseExists) {

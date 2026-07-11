@@ -73,7 +73,7 @@ export class CurriculumRepository {
         select curriculum_course_id as "curriculumCourseId", status
         from student_curriculum_simulation
         where student_id = ${studentId}
-      `) as unknown as Array<{ curriculumCourseId: number; status: "planned" | "simulated_completed" }>;
+      `) as unknown as Array<{ curriculumCourseId: number; status: "planned" | "simulated_completed" | "simulated_available" }>;
     } catch (e) {
       console.error('DB Error in findStudentSimulation', e);
       return [];
@@ -94,7 +94,7 @@ export class CurriculumRepository {
     }
   }
 
-  async upsertSimulation(studentId: number, curriculumId: number, curriculumCourseId: number, status: "planned" | "simulated_completed") {
+  async upsertSimulation(studentId: number, curriculumId: number, curriculumCourseId: number, status: "planned" | "simulated_completed" | "simulated_available") {
     try {
       await this.database.execute(sql`
         insert into student_curriculum_simulation (student_id, curriculum_id, curriculum_course_id, status)
