@@ -15,6 +15,13 @@
       "when": 1783738956141,
       "tag": "0001_flowery_jack_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783813643375,
+      "tag": "0002_slim_miracleman",
+      "breakpoints": true
     }
   ]
 }

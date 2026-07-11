@@ -20,6 +20,8 @@ import { sql } from "drizzle-orm";
 export const curriculumSimulationStatusEnum = pgEnum("curriculum_simulation_status", [
   "planned",
   "simulated_completed",
+  // HU19: simular "des-aprobar" un curso real (volverlo disponible/no tomado).
+  "simulated_available",
 ]);
 
 export const studentCourseStatusEnum = pgEnum("student_course_status", [
