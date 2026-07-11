@@ -91,3 +91,7 @@ ROLLBACK y la BD queda intacta.
 ## Verificación rápida del despliegue
 
 `GET /version` en el backend devuelve el SHA del commit desplegado (Vercel inyecta `VERCEL_GIT_COMMIT_SHA`). Si no coincide con `main`, el deploy está desactualizado — exactamente el incidente detectado el 2026-07-05 (producción sirviendo código de junio).
+
+## Migraciones pendientes de aplicar
+
+- **`drizzle/0001_flowery_jack_flag.sql` (HU27 — carnet de networking).** Generada, **NO aplicada a prod**. Aditiva y no-destructiva: crea el enum `social_platform` + la tabla `user_social_link` y agrega la columna `app_user.networking_opt_in boolean default false NOT NULL` (backfill seguro a `false`). Aplicar con el flujo oficial (backup + datos móviles + fuera del freeze): `bun run db:migrate`. Diseño en `specs/features/networking/networking.spec.md`. Deja la BD lista para que meltiruiz implemente HU27.

@@ -15,6 +15,7 @@ This index connects real user stories, product requirements, backend modules, an
 | 8 | Section Management | `specs/features/section-management/section-management.spec.md` | US16, US17, US18 | R14, R17, R18, R21 | `src/modules/section-management` | Implementado (con deuda técnica: SQL en rutas) |
 | 9 | Advising (docentes/JP) | `specs/features/advising/advising.spec.md` | HU18 | Rol docente, asesorías extra, RSVP/conteo | `src/modules/advising`, `src/modules/course-detail`, `auth-middleware.ts`, `schema.ts` | Implementado |
 | 10 | Chat en vivo por sección | `specs/features/chat/chat.spec.md` | HU23 | Puente auth Firebase, espejo de membresía, derivación de rol | `src/modules/chat`, `src/services/firebase.service.ts` | Implementado (reglas RTDB vía Emulator pendientes) |
+| 11 | Carnet de networking | `specs/features/networking/networking.spec.md` | HU27 | Carnet opt-in con redes sociales (alumnos+docentes), visible en contactos, compartible en chat | `src/modules/networking`, `schema.ts` | **Diseñada — BD lista (migración 0001), pendiente de implementar (meltiruiz)** |
 
 ## Workflow
 

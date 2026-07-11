@@ -370,3 +370,16 @@ Notas:
 
 - Las reglas de seguridad de RTDB (lectura/escritura/borrado por membresía) viven en Firebase y se validan con **Firebase Emulator** (fuera de la suite Bun).
 - Requiere `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, `FIREBASE_DATABASE_URL` en el entorno; si faltan, el servicio no firma tokens (chat deshabilitado). ⚠️ Fijar `firebase-admin@12.1.0` (v13/v14 rompen Vercel con `ERR_REQUIRE_ESM`).
+
+## Networking (HU27 — carnet) — PROPUESTO, pendiente de implementar
+
+> Contrato **propuesto** para HU27 (asignada a meltiruiz). La BD ya está lista (migración `drizzle/0001`). Detalle en `specs/features/networking/networking.spec.md`. Aplica a todos los usuarios (alumnos y docentes).
+
+- `GET /networking/me` — carnet del usuario autenticado. Response: `{ "optIn": boolean, "links": [ { "platform", "url", "label"? } ] }`.
+- `PUT /networking/me` — actualiza opt-in + reemplaza el set de enlaces. Body: `{ "optIn": boolean, "links": [ { "platform": "linkedin|instagram|github|x|website|other", "url": "https://…", "label"?: "string<=80" } ] }`. Reglas: máx. 1 enlace por plataforma, `url` http(s) ≤255, `label` requerida solo para `website`/`other`. Edita solo el carnet propio (derivado del JWT). Response: el carnet actualizado.
+- `GET /networking/users/:userId` — carnet **público** de otro usuario, **solo si** `networking_opt_in = true`. Response: `{ "userId", "fullName", "roleLabel"?, "links": [...] }`. Error: `404 NETWORKING_NOT_PUBLIC` si no dio opt-in.
+
+Notas:
+
+- El carnet solo se expone si el dueño hizo opt-in; quitar el opt-in lo oculta sin borrar los enlaces.
+- Compartir en el chat de sección: el mensaje referencia `userId` y el receptor resuelve el carnet vía `GET /networking/users/:userId` (fuente de verdad = Postgres, no se duplican redes en Firebase). Solo el carnet propio y en secciones donde el usuario es miembro.
