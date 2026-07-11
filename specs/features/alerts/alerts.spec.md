@@ -16,11 +16,14 @@ App móvil centrada en el estudiante: genera y expone alertas académicas a part
 | --- | --- |
 | HU08 | Como alumno quiero recibir alertas de riesgo académico y de alta carga de evaluaciones. |
 
-## Business Rules
-
 ### BR-ALERT-01: Autorización
 - Todo el módulo requiere `Authorization: Bearer <JWT>` (`authMiddleware`) y rol de alumno (`requireRole('student','delegate','subdelegate')`); un token docente recibe `403 FORBIDDEN`.
 - El `studentId` sale del contexto del JWT; si falta → `401 STUDENT_NOT_FOUND`.
+
+### BR-ALERT-06: Alertas de inasistencias (`academic_risk`)
+- Las alertas creadas por el docente vía `attendance-risk.notify` también tienen tipo `academic_risk`.
+- Cuando el estudiante consulta `GET /alerts/me`, estas alertas se augmentan con `courseName` y `sectionCode` igual que las de riesgo académico.
+- El título de una alerta de inasistencia sigue el formato `"Alerta de inasistencias - <courseName>"` para permitir la extracción del nombre del curso en `augmentAlerts`.
 
 ### BR-ALERT-02: Riesgo académico (`academic_risk`)
 - Se evalúa por curso, agregando las evaluaciones **ya calificadas** del alumno.

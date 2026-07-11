@@ -1,5 +1,5 @@
 import type { EventBus } from "../../events/index.js";
-import type { AlertsRepository, StoredAlert } from "./alerts.repository.js";
+import type { AlertsRepository, EnrollmentWithScore, StoredAlert } from "./alerts.repository.js";
 import { aggregateCourseScores, isAcademicRisk, personalAverage } from "./alerts.logic.js";
 
 export class AlertsService {
@@ -8,8 +8,39 @@ export class AlertsService {
     readonly events: EventBus,
   ) {}
 
+  private buildCourseMap(enrollments: EnrollmentWithScore[]): Map<string, { courseName: string; sectionCode: string }> {
+    const map = new Map<string, { courseName: string; sectionCode: string }>();
+    for (const e of enrollments) {
+      if (!map.has(e.course_name)) {
+        map.set(e.course_name, { courseName: e.course_name, sectionCode: e.section_code ?? "" });
+      }
+    }
+    return map;
+  }
+
+  private augmentAlerts(alerts: StoredAlert[], courseMap: Map<string, { courseName: string; sectionCode: string }>): StoredAlert[] {
+    return alerts.map(a => {
+      if (a.type === "academic_risk") {
+        let courseNameFromTitle: string | null = null;
+        if (a.title.startsWith("Riesgo Académico: ")) {
+          courseNameFromTitle = a.title.replace("Riesgo Académico: ", "").trim();
+        } else if (a.title.startsWith("Alerta de inasistencias - ")) {
+          courseNameFromTitle = a.title.replace("Alerta de inasistencias - ", "").trim();
+        }
+        if (courseNameFromTitle) {
+          const info = courseMap.get(courseNameFromTitle);
+          if (info) {
+            return { ...a, courseName: info.courseName, sectionCode: info.sectionCode };
+          }
+        }
+      }
+      return a;
+    });
+  }
+
   async getAlertsForStudent(studentId: number): Promise<StoredAlert[]> {
     const enrollments = await this.repository.getActiveEnrollmentsWithScores(studentId);
+    const courseMap = this.buildCourseMap(enrollments);
     // Agregación y umbrales viven en alerts.logic.ts (puro, testeable).
     const courseGroups = aggregateCourseScores(enrollments);
 
@@ -37,8 +68,9 @@ export class AlertsService {
       }
     }
 
-    // Return all alerts
-    return await this.repository.getAlerts(studentId);
+    // Return all alerts augmented with course info
+    const alerts = await this.repository.getAlerts(studentId);
+    return this.augmentAlerts(alerts, courseMap);
   }
 
   async markAlertAsRead(studentId: number, alertId: number): Promise<boolean> {
