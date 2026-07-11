@@ -92,6 +92,7 @@ ROLLBACK y la BD queda intacta.
 
 `GET /version` en el backend devuelve el SHA del commit desplegado (Vercel inyecta `VERCEL_GIT_COMMIT_SHA`). Si no coincide con `main`, el deploy está desactualizado — exactamente el incidente detectado el 2026-07-05 (producción sirviendo código de junio).
 
-## Migraciones pendientes de aplicar
+## Migraciones aplicadas / reconciliaciones
 
-- **`drizzle/0001_flowery_jack_flag.sql` (HU27 — carnet de networking).** Generada, **NO aplicada a prod**. Aditiva y no-destructiva: crea el enum `social_platform` + la tabla `user_social_link` y agrega la columna `app_user.networking_opt_in boolean default false NOT NULL` (backfill seguro a `false`). Aplicar con el flujo oficial (backup + datos móviles + fuera del freeze): `bun run db:migrate`. Diseño en `specs/features/networking/networking.spec.md`. Deja la BD lista para que meltiruiz implemente HU27.
+- **`drizzle/0001_flowery_jack_flag.sql` (HU27 — carnet de networking) — ✅ APLICADA a prod (2026-07-11)** con `bun run db:migrate`. Aditiva y no-destructiva: enum `social_platform` + tabla `user_social_link` + columna `app_user.networking_opt_in boolean default false NOT NULL`. Diseño en `specs/features/networking/networking.spec.md`. BD lista para que meltiruiz implemente HU27.
+- **Reconciliación de drift (2026-07-11)**: la BD viva tenía una columna `teacher.linkedin_link varchar(500)` agregada **directamente en la BD** (fuera de Drizzle y del schema.ts — un compañero empezó networking por su lado). Estaba 100% en NULL. Se **dropeó** (`ALTER TABLE teacher DROP COLUMN linkedin_link`) para eliminar el drift y consolidar el networking en el diseño de HU27 (`user_social_link` sobre `app_user`, que cubre alumnos **y** docentes). Backup previo de `teacher` (175 filas) tomado antes del drop.
