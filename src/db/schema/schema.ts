@@ -72,6 +72,17 @@ export const studentSpecialtyTypeEnum = pgEnum("student_specialty_type", [
   "interest",
 ]);
 
+// HU networking (carnet): plataformas soportadas en el carnet de networking.
+// `website`/`other` usan la etiqueta libre de user_social_link.label.
+export const socialPlatformEnum = pgEnum("social_platform", [
+  "linkedin",
+  "instagram",
+  "github",
+  "x",
+  "website",
+  "other",
+]);
+
 export const appUser = pgTable("app_user", {
   id: integer("id").generatedByDefaultAsIdentity().primaryKey(),
   code: varchar("code", { length: 30 }).notNull().unique(),
@@ -80,7 +91,27 @@ export const appUser = pgTable("app_user", {
   passwordHash: varchar("password_hash", { length: 255 }).notNull(),
   googleId: varchar("google_id", { length: 255 }),
   tokenVersion: integer("token_version").notNull().default(1),
+  // HU networking (carnet): opt-in explícito del usuario (alumno o docente) para
+  // mostrar/compartir su carnet con sus redes. Default false = privado hasta que
+  // acepte desde el perfil. Aplica a TODOS los usuarios (app_user es compartida).
+  networkingOptIn: boolean("networking_opt_in").notNull().default(false),
 });
+
+// HU networking (carnet): redes sociales que un usuario decide compartir en su
+// carnet. Una fila por plataforma; el carnet es la unión de las filas del
+// usuario. El frontend solo debe mostrar el carnet si networking_opt_in = true.
+export const userSocialLink = pgTable("user_social_link", {
+  id: integer("id").generatedByDefaultAsIdentity().primaryKey(),
+  userId: integer("user_id").notNull().references(() => appUser.id),
+  platform: socialPlatformEnum("platform").notNull(),
+  url: varchar("url", { length: 255 }).notNull(),
+  // Etiqueta opcional, sobre todo para `website`/`other` (ej. "Portafolio").
+  label: varchar("label", { length: 80 }),
+}, (t) => ({
+  // Un solo enlace por plataforma por usuario.
+  uqUserSocialLinkPlatform: unique("uq_user_social_link_platform").on(t.userId, t.platform),
+  idxUserSocialLinkUser: index("idx_user_social_link_user").on(t.userId),
+}));
 
 export const student = pgTable("student", {
   id: integer("id").generatedByDefaultAsIdentity().primaryKey(),
