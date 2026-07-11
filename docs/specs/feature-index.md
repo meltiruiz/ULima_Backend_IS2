@@ -5,7 +5,7 @@ This index connects real user stories, product requirements, backend modules, an
 | Priority | Feature | Spec | User Stories | Requirements | Backend target | Status |
 | --- | --- | --- | --- | --- | --- | --- |
 | 0 | Platform Runtime | `specs/features/platform-runtime/platform-runtime.spec.md` | N/A | Deploy runtime compatibility | `src/server.ts`, root config files | Completado |
-| 1 | Auth | `specs/features/auth/auth.spec.md` | US01, US02, HU20 | R1, R2, RNF6, RNF7 | `src/modules/auth` | Implementado |
+| 1 | Auth | `specs/features/auth/auth.spec.md` | US01, US02, HU18, HU20 | R1, R2, RNF6, RNF7 | `src/modules/auth` | Implementado (incluye Google SSO docente) |
 | 2 | Academic Profile | `specs/features/academic-profile/academic-profile.spec.md` | US05 | R12, R13 | `src/modules/academic-profile` | Implementado |
 | 3 | Curriculum | `specs/features/curriculum/curriculum.spec.md` | US03, US04 | R4, R5, R10, R11 | `src/modules/curriculum` | Implementado |
 | 4 | Grades | `specs/features/grades/grades.spec.md` | US06, US07 | R6, R9 | `src/modules/grades` | Implementado (con deuda técnica: SQL en rutas) |

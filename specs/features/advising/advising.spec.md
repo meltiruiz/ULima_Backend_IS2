@@ -36,7 +36,7 @@ Diseño de origen: `~/Desktop/ULIMA++/DISENO_PROFESORES.md` (aprobado 2026-07-05
 
 ### BR-ADV-02b: Convención de cuentas docentes (seed)
 - **Usuario** (`app_user.code`) = `[primera letra del nombre][apellido paterno]`, en minúsculas, sin tildes, con tope de 8 caracteres — derivado de `teacher.full_name` como `(inicial + apellidoPaternoSinTildes).toLowerCase().slice(0,8)` (ej. "H. Quintana" → `hquintan`).
-- **Correo institucional** (`app_user.institutional_email`) = `<usuario>@ulima.edu.pe` (dominio docente, distinto del `@aloe.ulima.edu.pe` de alumnos). Google SSO sigue siendo solo de alumnos: los docentes entran por código + contraseña.
+- **Correo institucional** (`app_user.institutional_email`) = `<usuario>@ulima.edu.pe` (dominio docente, distinto del `@aloe.ulima.edu.pe` de alumnos). El docente puede entrar con Google SSO si su cuenta ya está vinculada mediante `teacher.user_id`; código + contraseña permanece como alternativa.
 - **Contraseña** (bcrypt costo 10): profesores `profesor2026`, JPs `jefe2026`.
 - Datos concretos de la demo: JP **Aaron Lo Li** → usuario `alo`, `alo@ulima.edu.pe`, `jefe2026`, asignado a la sección de ISW2 de Jeff. El profesor de esa sección ya existe en `teacher`; su cuenta se genera con la misma convención sobre su `full_name` real.
 
