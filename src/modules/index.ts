@@ -11,6 +11,7 @@ import { officialGradesRoutes } from "./official-grades/index.js";
 import { scheduleRoutes } from "./schedule/index.js";
 import { sectionManagementRoutes } from "./section-management/index.js";
 import { chatRoutes } from "./chat/index.js";
+import { attendanceRiskRoutes } from "./attendance-risk/index.js";
 
 export const registerModules = (app: Hono) => {
   app.route("/auth", authRoutes);
@@ -25,4 +26,5 @@ export const registerModules = (app: Hono) => {
   app.route("/section-management", sectionManagementRoutes);
   app.route("/advising", advisingRoutes);
   app.route("/chat", chatRoutes);
+  app.route("/course-detail", attendanceRiskRoutes);
 };
