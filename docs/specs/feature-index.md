@@ -16,6 +16,7 @@ This index connects real user stories, product requirements, backend modules, an
 | 9 | Advising (docentes/JP) | `specs/features/advising/advising.spec.md` | HU18 | Rol docente, asesorías extra, RSVP/conteo | `src/modules/advising`, `src/modules/course-detail`, `auth-middleware.ts`, `schema.ts` | Implementado |
 | 10 | Chat en vivo por sección | `specs/features/chat/chat.spec.md` | HU23 | Puente auth Firebase, espejo de membresía, derivación de rol | `src/modules/chat`, `src/services/firebase.service.ts` | Implementado (reglas RTDB vía Emulator pendientes) |
 | 11 | Carnet de networking | `specs/features/networking/networking.spec.md` | HU27 | Carnet opt-in con redes sociales (alumnos+docentes), visible en contactos, compartible en chat | `src/modules/networking`, `schema.ts` | **Diseñada — BD lista (migración 0001), pendiente de implementar (meltiruiz)** |
+| 12 | Chatbot Asistente Académico | `specs/features/chatbot/chatbot.spec.md` | HU-CHATBOT-01, HU-CHATBOT-02 | Chatbot con IA (Cohere) que responde preguntas sobre notas, horario, malla, anuncios, compañeros, alertas y chat de sección | `src/modules/chatbot`, `src/services/cohere.client.ts`, `src/services/firebase.service.ts`, `src/db/schema/schema.ts`, `src/shared/middleware/rate-limit.ts` | **Diseñada — pendiente de implementar** |
 
 ## Workflow
 

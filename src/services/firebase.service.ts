@@ -94,6 +94,41 @@ class FirebaseService {
       throw new Error("Failed to register chat member");
     }
   }
+  public async getRecentMessages(
+    sectionId: number,
+    limit: number = 200,
+    since?: number,
+  ): Promise<Array<{ id: string; senderName: string; body: string; createdAt: number }>> {
+    if (!this.initialized) {
+      console.warn("Firebase not initialized, skipping chat message fetch");
+      return [];
+    }
+
+    try {
+      const ref = getDatabase().ref(`sections/${sectionId}/messages`);
+      let query = ref.orderByChild("createdAt").limitToLast(limit);
+
+      const snapshot = await query.once("value");
+      const data = snapshot.val() as Record<string, { senderName?: string; body?: string; createdAt?: number }> | null;
+      if (!data) return [];
+
+      let messages = Object.entries(data).map(([id, msg]) => ({
+        id,
+        senderName: msg.senderName ?? "Desconocido",
+        body: msg.body ?? "",
+        createdAt: msg.createdAt ?? 0,
+      }));
+
+      if (since) {
+        messages = messages.filter((m) => m.createdAt >= since);
+      }
+
+      return messages.sort((a, b) => a.createdAt - b.createdAt);
+    } catch (error) {
+      console.error("Error reading chat messages from Firebase:", error);
+      return [];
+    }
+  }
 }
 
 export const firebaseService = FirebaseService.getInstance();

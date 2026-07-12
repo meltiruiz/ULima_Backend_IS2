@@ -398,3 +398,30 @@ Notas:
 
 - El carnet solo se expone si el dueño hizo opt-in; quitar el opt-in lo oculta sin borrar los enlaces.
 - Compartir en el chat de sección: el mensaje referencia `userId` y el receptor resuelve el carnet vía `GET /networking/users/:userId` (fuente de verdad = Postgres, no se duplican redes en Firebase). Solo el carnet propio y en secciones donde el usuario es miembro.
+
+## Chatbot (Asistente Académico con IA)
+
+Inteligencia artificial conversacional (Cohere) integrada como asistente académico para alumnos. Detalle en `specs/features/chatbot/chatbot.spec.md`.
+
+### Sesiones
+
+- `POST /chatbot/sessions` — crea una nueva sesión vacía para el alumno autenticado. Roles requeridos: `student`, `delegate`, `subdelegate`. Response `201`: `{ "session": { "id": "uuid", "title": "Nueva conversacion", "createdAt": "ISO-8601", "updatedAt": "ISO-8601" } }`.
+- `GET /chatbot/sessions` — lista todas las sesiones del alumno ordenadas por `updated_at` descendente. Response `200`: `{ "sessions": [ { "id", "title", "createdAt", "updatedAt" } ] }`.
+- `GET /chatbot/sessions/:id` — obtiene sesión con todos sus mensajes. Response `200`: `{ "session": { ... }, "messages": [ { "id", "role": "user"|"assistant", "content", "createdAt" } ] }`. Error: `404 SESSION_NOT_FOUND`.
+- `DELETE /chatbot/sessions/:id` — elimina sesión y sus mensajes en cascada. Response `200`: `{ "message": "Sesion eliminada correctamente." }`. Error: `404 SESSION_NOT_FOUND`.
+
+### Preguntas
+
+- `POST /chatbot/sessions/:id/ask` — envía una pregunta en lenguaje natural y recibe respuesta del chatbot. Body: `{ "question": "string<=500", "localGrades?": [{ "id": "string", "nombre": "string", "notas": [{ "titulo": "string", "peso": 0-100, "valor": 0-20 }] }] }`. Response `200`: `{ "answer": "string", "sessionId": "uuid" }`. Errores: `400 INVALID_QUESTION`, `404 SESSION_NOT_FOUND`, `429 RATE_LIMITED` (máx. 20 preguntas/hora/alumno), `503 CHATBOT_UNAVAILABLE`.
+
+### Reglas
+
+- El chatbot solo responde con datos reales del alumno contenidos en el contexto (DB + notas locales + Firebase RTDB). No inventa.
+- La clasificación de intención usa Cohere Classify con keyword fallback en español.
+- La búsqueda en chat usa Cohere Rerank sobre mensajes recientes de Firebase RTDB (sin almacenar embeddings).
+- Ventana de contexto limitada a últimos 10 mensajes del historial de la sesión.
+- Prompt injection bloqueada (400 si contiene `<context>`, `[CONTEXTO]`, `system:`, `assistant:`).
+- Título automático de sesión se genera con Cohere en la primera pregunta.
+- Rate limit: 20 preguntas/hora/alumno (configurable via `CHATBOT_RATE_LIMIT`).
+- Timeout Cohere Chat: 8 segundos. Errores Cohere retornan 503 con mensaje genérico.
+- Requiere `COHERE_API_KEY` en variables de entorno.

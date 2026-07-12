@@ -38,6 +38,11 @@ const envSchema = z.object({
   FIREBASE_CLIENT_EMAIL: z.string().email().optional().or(z.literal("")).default(""),
   FIREBASE_PRIVATE_KEY: z.string().optional().default(""),
   FIREBASE_DATABASE_URL: z.string().url().optional().or(z.literal("")).default(""),
+  COHERE_API_KEY: z.string().min(1, "COHERE_API_KEY es requerida para el chatbot"),
+  CHATBOT_RATE_LIMIT: z.string().optional().transform((v) => {
+    const n = parseInt(v ?? "20", 10);
+    return Number.isInteger(n) && n > 0 ? n : 20;
+  }),
 });
 
 const parsed = envSchema.safeParse(process.env);
