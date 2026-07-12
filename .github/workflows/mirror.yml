@@ -1,0 +1,61 @@
+name: Espejo meltiruiz/main -> deploy
+
+# Mantiene este fork (itsRon4ld/ULima_Backend_IS2, rama main = la que despliega
+# Vercel) como copia-espejo de meltiruiz/ULima_Backend_IS2 (rama main).
+#
+# - Corre cada 5 min y tambien a mano (workflow_dispatch).
+# - Solo empuja cuando meltiruiz/main cambio, para no redesplegar en vano.
+# - El unico commit propio del fork es este workflow; se auto-preserva al
+#   re-espejar (si no, un reset duro a upstream lo borraria y el cron se
+#   apagaria solo).
+# - Usa el GITHUB_TOKEN nativo (upstream es publico, no hace falta secret).
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: espejo-upstream
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork (main, historia completa)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Espejar upstream/main en fork/main
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream https://github.com/meltiruiz/ULima_Backend_IS2.git
+          git fetch --quiet upstream main
+          UP="$(git rev-parse upstream/main)"
+
+          # fork/main deberia ser "upstream + este commit de workflow".
+          # Si el padre del HEAD ya es el ultimo upstream, no hay nada que hacer.
+          PARENT="$(git rev-parse HEAD^ 2>/dev/null || echo none)"
+          if [ "$PARENT" = "$UP" ]; then
+            echo "Ya sincronizado con upstream $UP. Nada que hacer."
+            exit 0
+          fi
+
+          echo "Upstream en $UP; re-espejando fork/main..."
+          cp .github/workflows/mirror.yml /tmp/mirror.yml
+          git checkout -B main "$UP"
+          mkdir -p .github/workflows
+          cp /tmp/mirror.yml .github/workflows/mirror.yml
+          git add .github/workflows/mirror.yml
+          git commit -m "ci: espejo del fork de despliegue con meltiruiz/main ($UP)"
+          git push --force origin HEAD:main
+          echo "Fork/main actualizado a upstream $UP (Vercel redesplegara)."
