@@ -198,15 +198,125 @@ Notas:
 
 ## Grades
 
-- `GET /grades/me/courses` — **IMPLEMENTADO**. Devuelve cursos + evaluaciones del sílabo con sus pesos, para la calculadora del alumno.
-- ~~`PUT /grades/me/scores`~~ — **NO IMPLEMENTADO** (ver nota de arquitectura).
-- ~~`GET /grades/me/courses/:sectionId/average`~~ — **NO IMPLEMENTADO** (ver nota de arquitectura).
+### GET /grades/me/courses
+
+Devuelve cursos + evaluaciones del sílabo con sus pesos, para la calculadora del alumno.
+
+- **Auth**: Bearer token, rol `student|delegate|subdelegate`
+- **Response** `200 OK`:
+  ```json
+  {
+    "cursos": [
+      {
+        "id": "1",
+        "nombre": "INGENIERÍA DE SOFTWARE II",
+        "ciclo": "2026-1",
+        "silaboUrl": "https://drive.google.com/...",
+        "secciones": [
+          { "idSeccion": "1", "codigoSeccion": "856" }
+        ]
+      }
+    ],
+    "syllabi": [
+      {
+        "cursoId": "1",
+        "cursoNombre": "INGENIERÍA DE SOFTWARE II",
+        "evaluaciones": [
+          {
+            "id": "1",
+            "nombre": "Examen Escrito 1",
+            "sigla": "EE1",
+            "peso": 30,
+            "tipo": "Examen"
+          }
+        ]
+      }
+    ]
+  }
+  ```
+
+### POST /grades/me/calculate
+
+Calcula el promedio ponderado de una lista de notas ingresadas por el alumno. No persiste datos.
+
+- **Auth**: Bearer token, rol `student|delegate|subdelegate`
+- **Request body**:
+  ```json
+  {
+    "notas": [
+      { "valor": 15, "peso": 30 },
+      { "valor": 12, "peso": 50 },
+      { "valor": 18, "peso": 20 }
+    ]
+  }
+  ```
+- **Response** `200 OK`:
+  ```json
+  {
+    "promedio": 14.1,
+    "sumaPesos": 100
+  }
+  ```
+- **Errors**: `400` `INVALID_REQUEST_BODY` (si `valor` no está entre 0-20 o `peso` no está entre 0-100)
+
+### POST /grades/me/notes
+
+Guarda las notas personales del alumno en `student_score`. Cada nota se asocia al `enrollment` activo del alumno en la sección. Si ya existe una nota para la misma evaluación, se actualiza (upsert).
+
+- **Auth**: Bearer token, rol `student|delegate|subdelegate`
+- **Request body**:
+  ```json
+  {
+    "cursos": [
+      {
+        "sectionId": 1,
+        "notas": [
+          { "assessmentId": 1, "valor": 15 },
+          { "assessmentId": 2, "valor": 0 }
+        ]
+      }
+    ]
+  }
+  ```
+- **Response** `200 OK`:
+  ```json
+  {
+    "message": "Notas guardadas correctamente"
+  }
+  ```
+- **Errors**: `400` `INVALID_REQUEST_BODY`, `500` error interno
+
+### GET /grades/me/notes
+
+Recupera las notas personales del alumno autenticado desde `student_score`.
+
+- **Auth**: Bearer token, rol `student|delegate|subdelegate`
+- **Response** `200 OK`:
+  ```json
+  {
+    "cursos": [
+      {
+        "sectionId": 1,
+        "notas": [
+          { "assessmentId": 1, "valor": 15 },
+          { "assessmentId": 2, "valor": 0 }
+        ]
+      }
+    ]
+  }
+  ```
+
+### Endpoints no implementados
+
+- ~~`PUT /grades/me/scores`~~ — **NO IMPLEMENTADO** (reemplazado por `POST /grades/me/notes`).
+- ~~`GET /grades/me/courses/:sectionId/average`~~ — **NO IMPLEMENTADO** (el cálculo se hace vía `POST /grades/me/calculate`).
+- ~~`POST /grades/syllabi`~~ — **NO IMPLEMENTADO** (fuera de v1; la tabla `syllabus` ya existe).
 
 Notas:
 
-- **Arquitectura real (HU06/HU07)**: el backend `grades` es **solo lectura** (`GET /grades/me/courses`). El **guardado de notas del alumno es local en el cliente** (`shared_preferences`, servicio Flutter `NotasService`) y el **cálculo del promedio ponderado ocurre en el frontend** (calculadora). Son notas personales no oficiales; por eso no se persisten en `student_score` desde la app ni se calcula el promedio en servidor. Los endpoints `PUT /grades/me/scores` y `.../average` quedaron documentados pero **nunca se implementaron**; se listan como no implementados para que el contrato refleje la realidad.
-- `student_score` existe en el esquema (notas oficiales de referencia) pero la app no lo escribe.
-- `POST /grades/syllabi` queda fuera de v1 salvo spec aprobada; la tabla `syllabus` ya existe.
+- `student_score` es la tabla de persistencia de notas personales del alumno.
+- El cálculo de promedio ponderado se delega al backend vía `POST /grades/me/calculate`.
+- Ya no existe `NotasService` en el frontend: toda la lógica de almacenamiento y cálculo está en el backend.
 
 ## Schedule
 

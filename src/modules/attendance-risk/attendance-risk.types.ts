@@ -1,4 +1,4 @@
-export type StudentRiskStatus = "impedido" | "en_riesgo";
+export type StudentRiskStatus = "impedido" | "en_riesgo" | "normal";
 
 export type AttendanceRiskRawRow = {
   code: string;
@@ -6,6 +6,7 @@ export type AttendanceRiskRawRow = {
   current_level: number | null;
   absent_hours: string;
   total_section_hours: string;
+  cycle: number;
 };
 
 export type StudentNotifyRow = {
@@ -17,6 +18,7 @@ export type StudentNotifyRow = {
   total_section_hours: string;
   course_name: string;
   section_code: string;
+  cycle: number;
 };
 
 export type NotifyResult = {
@@ -29,6 +31,7 @@ export type AttendanceRiskStudentResponse = {
   firstName: string;
   lastName: string;
   currentLevel: number | null;
+  cycle: number | null;
   absentHours: number;
   totalHours: number;
   absencePercentage: number;
@@ -39,6 +42,7 @@ export type AttendanceRiskStudentResponse = {
 export type AttendanceRiskSummary = {
   impedido: number;
   en_riesgo: number;
+  normal: number;
   total: number;
 };
 

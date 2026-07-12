@@ -42,23 +42,38 @@ const classifyStudent = (row: {
   current_level: number | null;
   full_name: string;
   code: string;
-}, sessionHours: number): AttendanceRiskStudentResponse | null => {
+  cycle: number;
+}, sessionHours: number): AttendanceRiskStudentResponse => {
   const absentHours = Number(row.absent_hours);
   const totalSectionHours = Number(row.total_section_hours);
+  const cycle = row.cycle;
+  const limit = cycle >= 6 ? 35 : 25;
+  const { firstName, lastName } = splitName(row.full_name);
 
-  if (totalSectionHours <= 0) return null;
-
-  const absencePercentage = (absentHours / totalSectionHours) * 100;
-  const currentLevel = row.current_level;
-  const limit = currentLevel != null && currentLevel >= 6 ? 35 : 25;
-
-  if (absencePercentage > limit) {
-    const { firstName, lastName } = splitName(row.full_name);
+  if (totalSectionHours <= 0) {
     return {
       code: row.code,
       firstName,
       lastName,
-      currentLevel,
+      currentLevel: row.current_level,
+      cycle,
+      absentHours,
+      totalHours: totalSectionHours,
+      absencePercentage: 0,
+      status: "normal",
+      missingFaltas: null,
+    };
+  }
+
+  const absencePercentage = (absentHours / totalSectionHours) * 100;
+
+  if (absencePercentage > limit) {
+    return {
+      code: row.code,
+      firstName,
+      lastName,
+      currentLevel: row.current_level,
+      cycle,
       absentHours,
       totalHours: totalSectionHours,
       absencePercentage: Math.round(absencePercentage * 100) / 100,
@@ -72,12 +87,12 @@ const classifyStudent = (row: {
   const faltasRemaining = Math.ceil(remainingAbsentHours / sessionHours);
 
   if (faltasRemaining === 2 || faltasRemaining === 3) {
-    const { firstName, lastName } = splitName(row.full_name);
     return {
       code: row.code,
       firstName,
       lastName,
-      currentLevel,
+      currentLevel: row.current_level,
+      cycle,
       absentHours,
       totalHours: totalSectionHours,
       absencePercentage: Math.round(absencePercentage * 100) / 100,
@@ -86,17 +101,30 @@ const classifyStudent = (row: {
     };
   }
 
-  return null;
+  return {
+    code: row.code,
+    firstName,
+    lastName,
+    currentLevel: row.current_level,
+    cycle,
+    absentHours,
+    totalHours: totalSectionHours,
+    absencePercentage: Math.round(absencePercentage * 100) / 100,
+    status: "normal",
+    missingFaltas: null,
+  };
 };
 
 const computeSummary = (students: AttendanceRiskStudentResponse[]): AttendanceRiskSummary => {
   let impedido = 0;
   let en_riesgo = 0;
+  let normal = 0;
   for (const s of students) {
     if (s.status === "impedido") impedido++;
     else if (s.status === "en_riesgo") en_riesgo++;
+    else normal++;
   }
-  return { impedido, en_riesgo, total: impedido + en_riesgo };
+  return { impedido, en_riesgo, normal, total: students.length };
 };
 
 export class AttendanceRiskService {
@@ -108,12 +136,7 @@ export class AttendanceRiskService {
   async getAttendanceRisk(sectionId: number): Promise<AttendanceRiskResponse> {
     const rows = await this.repository.findStudentsBySectionId(sectionId);
     const sessionHours = 2;
-    const students: AttendanceRiskStudentResponse[] = [];
-
-    for (const row of rows) {
-      const student = classifyStudent(row, sessionHours);
-      if (student) students.push(student);
-    }
+    const students: AttendanceRiskStudentResponse[] = rows.map(row => classifyStudent(row, sessionHours));
 
     return { students, summary: computeSummary(students) };
   }
@@ -121,18 +144,9 @@ export class AttendanceRiskService {
   async getAttendanceRiskSummary(sectionId: number): Promise<{ summary: AttendanceRiskSummary }> {
     const rows = await this.repository.findStudentsBySectionId(sectionId);
     const sessionHours = 2;
-    let impedido = 0;
-    let en_riesgo = 0;
+    const students: AttendanceRiskStudentResponse[] = rows.map(row => classifyStudent(row, sessionHours));
 
-    for (const row of rows) {
-      const student = classifyStudent(row, sessionHours);
-      if (student) {
-        if (student.status === "impedido") impedido++;
-        else if (student.status === "en_riesgo") en_riesgo++;
-      }
-    }
-
-    return { summary: { impedido, en_riesgo, total: impedido + en_riesgo } };
+    return { summary: computeSummary(students) };
   }
 
   async notifyStudents(sectionId: number): Promise<{ notified: number; message: string }> {
@@ -146,8 +160,8 @@ export class AttendanceRiskService {
       if (totalSectionHours <= 0) continue;
 
       const absencePercentage = (absentHours / totalSectionHours) * 100;
-      const currentLevel = row.current_level;
-      const limit = currentLevel != null && currentLevel >= 6 ? 35 : 25;
+      const cycle = row.cycle;
+      const limit = cycle >= 6 ? 35 : 25;
       const pct = Math.round(absencePercentage * 100) / 100;
       const courseName = row.course_name;
       const sectionCode = row.section_code;

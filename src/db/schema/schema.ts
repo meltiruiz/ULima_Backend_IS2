@@ -418,6 +418,18 @@ export const studentScore = pgTable("student_score", {
   idxStudentScoreEnrollment: index("idx_student_score_enrollment").on(t.enrollmentId),
 }));
 
+export const simulatedGrade = pgTable("simulated_grades", {
+  id: integer("id").generatedByDefaultAsIdentity().primaryKey(),
+  enrollmentId: integer("enrollment_id").notNull().references(() => enrollment.id),
+  assessmentId: integer("assessment_id").notNull().references(() => assessment.id),
+  value: decimal("value", { precision: 5, scale: 2 }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  uqSimulatedGrade: unique("uq_simulated_grade").on(t.enrollmentId, t.assessmentId),
+  chkSimulatedGradeValue: check("chk_simulated_grade_value", sql`${t.value} IS NULL OR ${t.value} BETWEEN 0 AND 20`),
+  idxSimulatedGradeEnrollment: index("idx_simulated_grade_enrollment").on(t.enrollmentId),
+}));
+
 export const announcement = pgTable("announcement", {
   id: integer("id").generatedByDefaultAsIdentity().primaryKey(),
   sectionRepresentativeId: integer("section_representative_id").notNull().references(() => sectionRepresentative.id),
