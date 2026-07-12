@@ -210,9 +210,44 @@ Notas:
 
 Notas:
 
-- **Arquitectura real (HU06/HU07)**: el backend `grades` es **solo lectura** (`GET /grades/me/courses`). El **guardado de notas del alumno es local en el cliente** (`shared_preferences`, servicio Flutter `NotasService`) y el **cálculo del promedio ponderado ocurre en el frontend** (calculadora). Son notas personales no oficiales; por eso no se persisten en `student_score` desde la app ni se calcula el promedio en servidor. Los endpoints `PUT /grades/me/scores` y `.../average` quedaron documentados pero **nunca se implementaron**; se listan como no implementados para que el contrato refleje la realidad.
-- `student_score` existe en el esquema (notas oficiales de referencia) pero la app no lo escribe.
+- **Arquitectura real (HU06/HU07)**: el backend `grades` es **solo lectura** (`GET /grades/me/courses`) y el **cálculo del promedio ponderado ocurre en el frontend** (calculadora). El **guardado de las notas del alumno** ahora se **persiste en el backend** vía `simulated-grades` (ver sección) — antes solo vivía en `shared_preferences`. El promedio se sigue calculando en el cliente.
+- `student_score` existe en el esquema (notas seed de referencia); la app no lo escribe. Las notas de la calculadora van a `simulated_grades`.
+- Los endpoints `PUT /grades/me/scores` y `.../average` quedaron documentados pero **nunca se implementaron**; se listan como no implementados para que el contrato refleje la realidad.
 - `POST /grades/syllabi` queda fuera de v1 salvo spec aprobada; la tabla `syllabus` ya existe.
+
+## Simulated Grades
+
+Notas SIMULADAS que el propio alumno ingresa en la calculadora, persistidas en la tabla `simulated_grades` (una fila por `enrollment_id` + `assessment_id`, `value` 0..20). Todas requieren JWT de alumno (`STUDENT_ROLES`); el `studentId` sale del token. El backend valida que cada `assessmentId` pertenezca a un curso donde el alumno está matriculado (deriva `enrollment` de `studentId`+`assessmentId`); si no, `404 ASSESSMENT_NOT_ENROLLED`.
+
+- `GET /simulated-grades/me` — **IMPLEMENTADO**. Lista las notas simuladas del alumno.
+  - Response: `{ "grades": [{ "assessmentId": number, "sectionId": number, "value": number }] }`
+- `PUT /simulated-grades/me` — **IMPLEMENTADO**. Upsert por lote (guarda varias notas de un curso a la vez).
+  - Body: `{ "grades": [{ "assessmentId": number, "value": number }] }` (1..200, `value` 0..20)
+  - Response: `{ "grades": [{ "assessmentId": number, "sectionId": number, "value": number }] }` (lista vigente completa)
+  - Errores: `404 ASSESSMENT_NOT_ENROLLED` si alguna evaluación no corresponde a una matrícula del alumno (no persiste parcialmente).
+- `DELETE /simulated-grades/me/:assessmentId` — **IMPLEMENTADO**. Borra la nota simulada del alumno para esa evaluación.
+  - Response: `{ "message": "Simulated grade removed" }`; `404 SIMULATED_GRADE_NOT_FOUND` si no existía; `400 INVALID_ASSESSMENT_ID` si el param no es entero positivo.
+
+## Official Grades
+
+Notas **oficiales** que el profesor/JP carga por evaluación, en `student_score`. La **nota final** = promedio ponderado (Σ nota×peso/100), calculada en el cliente. Distinto de `simulated-grades` (notas no oficiales del alumno).
+
+Docente (`requireRole("teacher")`, `teacherId` del JWT; solo secciones propias vía `section.teacher_id`/`jp_id`):
+
+- `GET /official-grades/teacher/sections` — **IMPLEMENTADO**. Secciones del período activo que dicta.
+  - Response: `{ "sections": [{ "sectionId": number, "courseName": string, "sectionCode": string, "rol": "Profesor"|"JP" }] }`
+- `GET /official-grades/teacher/sections/:sectionId/scores` — **IMPLEMENTADO**. Grilla de calificación.
+  - Response: `{ "sectionId": number, "students": [{ "enrollmentId": number, "code": string, "fullName": string }], "assessments": [{ "assessmentId": number, "code": string, "name": string, "weight": number, "weekNumber": number }], "scores": [{ "enrollmentId": number, "assessmentId": number, "value": number }] }`
+  - `403 NOT_SECTION_TEACHER` si el docente no dicta la sección.
+- `PUT /official-grades/teacher/sections/:sectionId/scores` — **IMPLEMENTADO**. Upsert por lote de notas.
+  - Body: `{ "scores": [{ "enrollmentId": number, "assessmentId": number, "value": number }] }` (`value` 0..20, 1..1000 items)
+  - Response: la grilla actualizada (mismo shape que el GET).
+  - Errores: `403 NOT_SECTION_TEACHER`; `404 ENROLLMENT_NOT_IN_SECTION` / `404 ASSESSMENT_NOT_IN_SECTION` (valida todo antes de escribir).
+
+Alumno (`requireRole(student|delegate|subdelegate)`, `studentId` del JWT):
+
+- `GET /official-grades/me` — **IMPLEMENTADO**. Notas oficiales del alumno por curso/sección (el cliente calcula la nota final).
+  - Response: `{ "courses": [{ "sectionId": number, "courseName": string, "sectionCode": string, "assessments": [{ "assessmentId": number, "code": string, "name": string, "weight": number, "value": number|null }] }] }`
 
 ## Schedule
 

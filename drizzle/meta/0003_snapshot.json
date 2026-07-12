@@ -1,5 +1,5 @@
 {
-  "id": "61e2850a-2c6c-4c88-b787-26908d47414d",
+  "id": "aec2a1d5-4d5c-4e1f-975e-1291d27a4f61",
   "prevId": "acb1dbe2-f713-43e3-8592-0c47ce2f337d",
   "version": "7",
   "dialect": "postgresql",
@@ -2453,6 +2453,118 @@
       },
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.simulated_grades": {
+      "name": "simulated_grades",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "simulated_grades_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "2147483647",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "enrollment_id": {
+          "name": "enrollment_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "assessment_id": {
+          "name": "assessment_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_simulated_grade_enrollment": {
+          "name": "idx_simulated_grade_enrollment",
+          "columns": [
+            {
+              "expression": "enrollment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "simulated_grades_enrollment_id_enrollment_id_fk": {
+          "name": "simulated_grades_enrollment_id_enrollment_id_fk",
+          "tableFrom": "simulated_grades",
+          "tableTo": "enrollment",
+          "columnsFrom": [
+            "enrollment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "simulated_grades_assessment_id_assessment_id_fk": {
+          "name": "simulated_grades_assessment_id_assessment_id_fk",
+          "tableFrom": "simulated_grades",
+          "tableTo": "assessment",
+          "columnsFrom": [
+            "assessment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_simulated_grade": {
+          "name": "uq_simulated_grade",
+          "nullsNotDistinct": false,
+          "columns": [
+            "enrollment_id",
+            "assessment_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "chk_simulated_grade_value": {
+          "name": "chk_simulated_grade_value",
+          "value": "\"simulated_grades\".\"value\" BETWEEN 0 AND 20"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.specialty": {

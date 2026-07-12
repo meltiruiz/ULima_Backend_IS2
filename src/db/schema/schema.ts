@@ -450,6 +450,23 @@ export const studentScore = pgTable("student_score", {
   idxStudentScoreEnrollment: index("idx_student_score_enrollment").on(t.enrollmentId),
 }));
 
+// Notas SIMULADAS que el propio alumno ingresa en la calculadora para proyectar
+// su promedio. Separadas de `student_score` (que guarda las notas seed) para no
+// mezclar lo auto-reportado con lo "oficial". Persistidas en la BD (antes solo
+// vivían en SharedPreferences del dispositivo) para que sigan al alumno entre
+// dispositivos. Una fila por (matrícula, evaluación); `value` es obligatorio.
+export const simulatedGrades = pgTable("simulated_grades", {
+  id: integer("id").generatedByDefaultAsIdentity().primaryKey(),
+  enrollmentId: integer("enrollment_id").notNull().references(() => enrollment.id),
+  assessmentId: integer("assessment_id").notNull().references(() => assessment.id),
+  value: decimal("value", { precision: 5, scale: 2 }).notNull(),
+  updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  uqSimulatedGrade: unique("uq_simulated_grade").on(t.enrollmentId, t.assessmentId),
+  chkSimulatedGradeValue: check("chk_simulated_grade_value", sql`${t.value} BETWEEN 0 AND 20`),
+  idxSimulatedGradeEnrollment: index("idx_simulated_grade_enrollment").on(t.enrollmentId),
+}));
+
 export const announcement = pgTable("announcement", {
   id: integer("id").generatedByDefaultAsIdentity().primaryKey(),
   sectionRepresentativeId: integer("section_representative_id").notNull().references(() => sectionRepresentative.id),
