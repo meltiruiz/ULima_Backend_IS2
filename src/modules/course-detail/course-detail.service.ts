@@ -1,10 +1,12 @@
 import type { EventBus } from "../../events/index.js";
+import { HttpError } from "../../shared/errors/http-error.js";
 import type { CourseDetailRepository } from "./course-detail.repository.js";
 import type {
   AdvisingResult,
   AnnouncementsResult,
   ContactsResult,
   RawContactTeacherRow,
+  RsvpResult,
   TeacherResponse,
 } from "./course-detail.types.js";
 
@@ -92,8 +94,8 @@ export class CourseDetailService {
     };
   }
 
-  async getAdvising(sectionId: number): Promise<AdvisingResult> {
-    const rows = await this.repository.findAdvisingBySectionId(sectionId);
+  async getAdvising(sectionId: number, studentId?: number): Promise<AdvisingResult> {
+    const rows = await this.repository.findAdvisingBySectionId(sectionId, studentId);
 
     return {
       asesorias: rows.map((row) => ({
@@ -109,8 +111,37 @@ export class CourseDetailService {
         fin: row.end_time ?? "",
         aula: row.classroom ?? "Por definir",
         zoom: row.meeting_url ?? "",
+        // HU18: metadatos de la asesoría (los APKs viejos ignoran estos campos).
+        kind: row.kind ?? "recurring",
+        fecha: row.session_date ?? null,
+        dictanteRol: row.dictante_rol ?? "Profesor",
+        asistentes: Number(row.asistentes ?? 0),
+        // HU17: confirmación del alumno autenticado.
+        myRsvp: row.my_rsvp === true,
       })),
     };
+  }
+
+  /**
+   * HU17: confirma la asistencia del alumno a una asesoría. Idempotente: repetir
+   * la confirmación no duplica el registro (unique en BD). Rechaza con 404 si el
+   * alumno no participa de la asesoría (curso/sección que no lleva).
+   */
+  async confirmRsvp(sessionId: number, studentId: number): Promise<RsvpResult> {
+    const allowed = await this.repository.isAdvisingParticipant(sessionId, studentId);
+    if (!allowed) {
+      throw new HttpError(404, "Asesoría no disponible para tu sección.", "ADVISING_SESSION_NOT_FOUND");
+    }
+    await this.repository.insertRsvp(sessionId, studentId);
+    const asistentes = await this.repository.countRsvp(sessionId);
+    return { id: String(sessionId), asistentes, myRsvp: true };
+  }
+
+  /** HU17: cancela la asistencia del alumno. Idempotente: cancelar sin confirmación es no-op. */
+  async cancelRsvp(sessionId: number, studentId: number): Promise<RsvpResult> {
+    await this.repository.deleteRsvp(sessionId, studentId);
+    const asistentes = await this.repository.countRsvp(sessionId);
+    return { id: String(sessionId), asistentes, myRsvp: false };
   }
 
   async getContacts(sectionId: number): Promise<ContactsResult> {

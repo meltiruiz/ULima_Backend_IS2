@@ -27,6 +27,8 @@ export class AlertsRepository {
   constructor(readonly database: typeof db) {}
 
   async getActiveEnrollmentsWithScores(studentId: number): Promise<EnrollmentWithScore[]> {
+    // Se filtra por período académico activo para evitar que evaluaciones de
+    // semestres anteriores generen alertas de cursos que el alumno ya no cursa.
     return (await this.database.execute(sql`
       select
         e.id as enrollment_id,
@@ -39,6 +41,7 @@ export class AlertsRepository {
       from enrollment e
       join section sec on sec.id = e.section_id
       join course_offering co on co.id = sec.course_offering_id
+      join academic_period ap on ap.id = co.academic_period_id and ap.is_active = true
       join course c on c.id = co.course_id
       left join syllabus sy on sy.course_offering_id = co.id
       left join assessment a on a.syllabus_id = sy.id
@@ -49,6 +52,7 @@ export class AlertsRepository {
   }
 
   async getHighLoadWeeks(studentId: number): Promise<Array<{ week_number: number; assessment_count: number }>> {
+    // También filtrado por período activo para evitar semanas de períodos pasados.
     return (await this.database.execute(sql`
       select
         a.week_number,
@@ -56,6 +60,7 @@ export class AlertsRepository {
       from enrollment e
       join section sec on sec.id = e.section_id
       join course_offering co on co.id = sec.course_offering_id
+      join academic_period ap on ap.id = co.academic_period_id and ap.is_active = true
       join syllabus sy on sy.course_offering_id = co.id
       join assessment a on a.syllabus_id = sy.id
       where e.student_id = ${studentId}
@@ -65,19 +70,38 @@ export class AlertsRepository {
     `)) as unknown as Array<{ week_number: number; assessment_count: number }>;
   }
 
-  async getAlerts(studentId: number): Promise<StoredAlert[]> {
+  async getAlerts(studentId: number, since?: Date): Promise<StoredAlert[]> {
     const rows = await this.database.execute(sql`
       select 
-        id, 
-        student_id as "studentId", 
-        type, 
-        title, 
-        message, 
-        is_read as "isRead", 
-        created_at as "createdAt"
-      from alert
-      where student_id = ${studentId}
-      order by created_at desc
+        al.id, 
+        al.student_id as "studentId", 
+        al.type, 
+        al.title, 
+        al.message, 
+        al.is_read as "isRead", 
+        al.created_at as "createdAt"
+      from alert al
+      where al.student_id = ${studentId}
+        ${since ? sql`and al.created_at >= ${since.toISOString()}` : sql``}
+        and (
+          al.type != 'academic_risk'
+          or (al.title not like 'Riesgo Académico: %' and al.title not like 'Alerta de inasistencias - %')
+          or exists (
+            select 1
+            from enrollment e
+            join section sec on sec.id = e.section_id
+            join course_offering co on co.id = sec.course_offering_id
+            join academic_period ap on ap.id = co.academic_period_id and ap.is_active = true
+            join course c on c.id = co.course_id
+            where e.student_id = al.student_id
+              and e.status = 'active'
+              and (
+                al.title = 'Riesgo Académico: ' || c.name
+                or al.title = 'Alerta de inasistencias - ' || c.name
+              )
+          )
+        )
+      order by al.created_at desc
     `) as unknown as any[];
 
     return rows.map(r => ({
@@ -89,6 +113,14 @@ export class AlertsRepository {
       isRead: Boolean(r.isRead),
       createdAt: new Date(r.createdAt),
     }));
+  }
+
+  /** Retorna la fecha de inicio del período académico activo, o null si no hay ninguno. */
+  async getActivePeriodStart(): Promise<Date | null> {
+    const rows = await this.database.execute(sql`
+      select start_date::text as start_date from academic_period where is_active = true limit 1
+    `) as unknown as Array<{ start_date: string }>;
+    return rows[0]?.start_date ? new Date(rows[0].start_date) : null;
   }
 
   async findAlertByTitle(studentId: number, title: string): Promise<boolean> {

@@ -301,4 +301,108 @@ export class ScheduleRepository {
       return [];
     }
   }
+
+  async findSectionDetails(sectionId: number) {
+    try {
+      const rows = await this.database.execute(sql`
+        select sec.code as section_code, c.name as course_name
+        from section sec
+        join course_offering co on co.id = sec.course_offering_id
+        join course c on c.id = co.course_id
+        where sec.id = ${sectionId}
+        limit 1
+      `) as unknown as Array<{ section_code: string; course_name: string }>;
+      return rows[0] ? { sectionCode: rows[0].section_code, courseName: rows[0].course_name } : null;
+    } catch (e) {
+      console.error('DB Error in findSectionDetails', e);
+      return null;
+    }
+  }
+
+  async findAssessmentDetails(assessmentId: number) {
+    try {
+      const rows = await this.database.execute(sql`
+        select code, name from assessment where id = ${assessmentId} limit 1
+      `) as unknown as Array<{ code: string; name: string }>;
+      return rows[0] ? { code: rows[0].code, name: rows[0].name } : null;
+    } catch (e) {
+      console.error('DB Error in findAssessmentDetails', e);
+      return null;
+    }
+  }
+
+  async findActiveStudentsBySectionId(sectionId: number) {
+    try {
+      return await this.database.execute(sql`
+        select student_id as "studentId" from enrollment where section_id = ${sectionId} and status = 'active'
+      `) as unknown as Array<{ studentId: number }>;
+    } catch (e) {
+      console.error('DB Error in findActiveStudentsBySectionId', e);
+      return [];
+    }
+  }
+
+  async countGradedForAssessment(assessmentId: number, sectionId: number): Promise<number> {
+    try {
+      const rows = await this.database.execute(sql`
+        select count(ss.id)::int as graded
+        from enrollment e
+        left join student_score ss on ss.assessment_id = ${assessmentId}
+          and ss.enrollment_id = e.id
+          and ss.value is not null
+        where e.section_id = ${sectionId} and e.status = 'active'
+      `) as unknown as Array<{ graded: number }>;
+      return rows[0]?.graded ?? 0;
+    } catch (e) {
+      console.error('DB Error in countGradedForAssessment', e);
+      return 0;
+    }
+  }
+
+  async findAlertByTitle(studentId: number, title: string): Promise<boolean> {
+    try {
+      const rows = await this.database.execute(sql`
+        select id from alert where student_id = ${studentId} and title = ${title} limit 1
+      `) as unknown as any[];
+      return rows.length > 0;
+    } catch (e) {
+      console.error('DB Error in findAlertByTitle', e);
+      return false;
+    }
+  }
+
+  /**
+   * Verifica si algún alumno de la sección recibió una alerta de notas
+   * para la evaluación dada (patrón de título único por assessmentId+sectionId).
+   * Usado para inicializar el estado del switch en el frontend.
+   */
+  async findWasAssessmentNotified(sectionId: number, assessmentId: number): Promise<boolean> {
+    try {
+      const rows = await this.database.execute(sql`
+        select al.id from alert al
+        join enrollment e on e.student_id = al.student_id and e.section_id = ${sectionId} and e.status = 'active'
+        join section sec on sec.id = e.section_id
+        join course_offering co on co.id = sec.course_offering_id
+        join course c on c.id = co.course_id
+        join assessment ass on ass.id = ${assessmentId}
+        where al.title = 'Notas disponibles: ' || ass.code || ' - ' || c.name
+        limit 1
+      `) as unknown as any[];
+      return rows.length > 0;
+    } catch (e) {
+      console.error('DB Error in findWasAssessmentNotified', e);
+      return false;
+    }
+  }
+
+  async createAlert(studentId: number, type: "academic_risk" | "high_load", title: string, message: string): Promise<void> {
+    try {
+      await this.database.execute(sql`
+        insert into alert (student_id, type, title, message, is_read, created_at)
+        values (${studentId}, ${type}, ${title}, ${message}, false, now())
+      `);
+    } catch (e) {
+      console.error('DB Error in createAlert', e);
+    }
+  }
 }

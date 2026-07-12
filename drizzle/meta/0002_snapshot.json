@@ -1,6 +1,6 @@
 {
-  "id": "4187b6fa-b43c-490a-b278-70df2bcc1a00",
-  "prevId": "7fde4a07-d4e2-48de-a7ae-12d1f187aa67",
+  "id": "acb1dbe2-f713-43e3-8592-0c47ce2f337d",
+  "prevId": "f6e8aeca-9e9b-4536-b630-7883ae3e5446",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -514,6 +514,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": 1
+        },
+        "networking_opt_in": {
+          "name": "networking_opt_in",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {},
@@ -3166,6 +3173,100 @@
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
+    },
+    "public.user_social_link": {
+      "name": "user_social_link",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "user_social_link_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "2147483647",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "platform": {
+          "name": "platform",
+          "type": "social_platform",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "url": {
+          "name": "url",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "varchar(80)",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_user_social_link_user": {
+          "name": "idx_user_social_link_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "user_social_link_user_id_app_user_id_fk": {
+          "name": "user_social_link_user_id_app_user_id_fk",
+          "tableFrom": "user_social_link",
+          "tableTo": "app_user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_user_social_link_platform": {
+          "name": "uq_user_social_link_platform",
+          "nullsNotDistinct": false,
+          "columns": [
+            "user_id",
+            "platform"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
     }
   },
   "enums": {
@@ -3209,7 +3310,8 @@
       "schema": "public",
       "values": [
         "planned",
-        "simulated_completed"
+        "simulated_completed",
+        "simulated_available"
       ]
     },
     "public.enrollment_status": {
@@ -3235,6 +3337,18 @@
       "values": [
         "delegate",
         "subdelegate"
+      ]
+    },
+    "public.social_platform": {
+      "name": "social_platform",
+      "schema": "public",
+      "values": [
+        "linkedin",
+        "instagram",
+        "github",
+        "x",
+        "website",
+        "other"
       ]
     },
     "public.student_course_status": {

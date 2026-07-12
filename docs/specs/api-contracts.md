@@ -50,6 +50,12 @@ Contrato REST local del backend ULima++. Mantener alineado manualmente con `ULim
   - Request: `{ "code": "string", "password": "string" }`
   - Response: `{ "token": "string", "tokenType": "Bearer", "expiresIn": 86400, "user": User }`
   - HU18: si el `code` no es de un `student` pero sí de un `teacher` (vía `teacher.user_id`), inicia sesión como docente. El `user` docente es `{ id, teacherId, code, fullName, institutionalEmail, role: "teacher", teacherLabel: "Profesor"|"Jefe de Práctica", setupComplete: true }` (sin `studentId`). No exige matrícula activa. El JWT lleva `teacherId` en vez de `studentId`. El login de alumnos no cambia.
+- `POST /auth/google`
+  - Request: `{ "idToken": "string" }`
+  - Acepta `@aloe.ulima.edu.pe` para cuentas vinculadas a `student.user_id` y `@ulima.edu.pe` para cuentas vinculadas a `teacher.user_id`. No crea cuentas ni perfiles.
+  - Response: `{ "token": "string", "tokenType": "Bearer", "expiresIn": 86400, "user": User }`. El alumno conserva su shape y reglas de matrícula/representación. El docente recibe el mismo shape y JWT docente de `POST /auth/login`, sin exigir matrícula.
+  - En ambos casos se vincula `app_user.google_id`, se incrementa `tokenVersion` y se mantiene disponible el login con código/contraseña.
+  - Errores: `401 INVALID_TOKEN`, `401 USER_NOT_FOUND`, `403 INVALID_DOMAIN`; `403 NOT_ENROLLED` solo para alumnos.
 - `GET /auth/me`
   - Response: `{ "user": User }` (shape de estudiante o de docente según el rol del token).
 - `POST /auth/logout`
@@ -84,7 +90,7 @@ Contrato REST local del backend ULima++. Mantener alineado manualmente con `ULim
 }
 ```
 
-Errores de login: `401 USER_NOT_FOUND`, `401 INVALID_PASSWORD`, `403 NOT_ENROLLED`.
+Errores de login con código: `401 USER_NOT_FOUND`, `401 INVALID_PASSWORD`, `403 NOT_ENROLLED`. Errores adicionales de Google: `401 INVALID_TOKEN`, `403 INVALID_DOMAIN`.
 
 ## Academic Profile
 
@@ -317,6 +323,44 @@ Notas:
 - `student_score` es la tabla de persistencia de notas personales del alumno.
 - El cálculo de promedio ponderado se delega al backend vía `POST /grades/me/calculate`.
 - Ya no existe `NotasService` en el frontend: toda la lógica de almacenamiento y cálculo está en el backend.
+- **Arquitectura real (HU06/HU07)**: el backend `grades` es **solo lectura** (`GET /grades/me/courses`) y el **cálculo del promedio ponderado ocurre en el frontend** (calculadora). El **guardado de las notas del alumno** ahora se **persiste en el backend** vía `simulated-grades` (ver sección) — antes solo vivía en `shared_preferences`. El promedio se sigue calculando en el cliente.
+- `student_score` existe en el esquema (notas seed de referencia); la app no lo escribe. Las notas de la calculadora van a `simulated_grades`.
+- Los endpoints `PUT /grades/me/scores` y `.../average` quedaron documentados pero **nunca se implementaron**; se listan como no implementados para que el contrato refleje la realidad.
+- `POST /grades/syllabi` queda fuera de v1 salvo spec aprobada; la tabla `syllabus` ya existe.
+
+## Simulated Grades
+
+Notas SIMULADAS que el propio alumno ingresa en la calculadora, persistidas en la tabla `simulated_grades` (una fila por `enrollment_id` + `assessment_id`, `value` 0..20). Todas requieren JWT de alumno (`STUDENT_ROLES`); el `studentId` sale del token. El backend valida que cada `assessmentId` pertenezca a un curso donde el alumno está matriculado (deriva `enrollment` de `studentId`+`assessmentId`); si no, `404 ASSESSMENT_NOT_ENROLLED`.
+
+- `GET /simulated-grades/me` — **IMPLEMENTADO**. Lista las notas simuladas del alumno.
+  - Response: `{ "grades": [{ "assessmentId": number, "sectionId": number, "value": number }] }`
+- `PUT /simulated-grades/me` — **IMPLEMENTADO**. Upsert por lote (guarda varias notas de un curso a la vez).
+  - Body: `{ "grades": [{ "assessmentId": number, "value": number }] }` (1..200, `value` 0..20)
+  - Response: `{ "grades": [{ "assessmentId": number, "sectionId": number, "value": number }] }` (lista vigente completa)
+  - Errores: `404 ASSESSMENT_NOT_ENROLLED` si alguna evaluación no corresponde a una matrícula del alumno (no persiste parcialmente).
+- `DELETE /simulated-grades/me/:assessmentId` — **IMPLEMENTADO**. Borra la nota simulada del alumno para esa evaluación.
+  - Response: `{ "message": "Simulated grade removed" }`; `404 SIMULATED_GRADE_NOT_FOUND` si no existía; `400 INVALID_ASSESSMENT_ID` si el param no es entero positivo.
+
+## Official Grades
+
+Notas **oficiales** que el profesor/JP carga por evaluación, en `student_score`. La **nota final** = promedio ponderado (Σ nota×peso/100), calculada en el cliente. Distinto de `simulated-grades` (notas no oficiales del alumno).
+
+Docente (`requireRole("teacher")`, `teacherId` del JWT; solo secciones propias vía `section.teacher_id`/`jp_id`):
+
+- `GET /official-grades/teacher/sections` — **IMPLEMENTADO**. Secciones del período activo que dicta.
+  - Response: `{ "sections": [{ "sectionId": number, "courseName": string, "sectionCode": string, "rol": "Profesor"|"JP" }] }`
+- `GET /official-grades/teacher/sections/:sectionId/scores` — **IMPLEMENTADO**. Grilla de calificación.
+  - Response: `{ "sectionId": number, "students": [{ "enrollmentId": number, "code": string, "fullName": string }], "assessments": [{ "assessmentId": number, "code": string, "name": string, "weight": number, "weekNumber": number }], "scores": [{ "enrollmentId": number, "assessmentId": number, "value": number }] }`
+  - `403 NOT_SECTION_TEACHER` si el docente no dicta la sección.
+- `PUT /official-grades/teacher/sections/:sectionId/scores` — **IMPLEMENTADO**. Upsert por lote de notas.
+  - Body: `{ "scores": [{ "enrollmentId": number, "assessmentId": number, "value": number }] }` (`value` 0..20, 1..1000 items)
+  - Response: la grilla actualizada (mismo shape que el GET).
+  - Errores: `403 NOT_SECTION_TEACHER`; `404 ENROLLMENT_NOT_IN_SECTION` / `404 ASSESSMENT_NOT_IN_SECTION` (valida todo antes de escribir).
+
+Alumno (`requireRole(student|delegate|subdelegate)`, `studentId` del JWT):
+
+- `GET /official-grades/me` — **IMPLEMENTADO**. Notas oficiales del alumno por curso/sección (el cliente calcula la nota final).
+  - Response: `{ "courses": [{ "sectionId": number, "courseName": string, "sectionCode": string, "assessments": [{ "assessmentId": number, "code": string, "name": string, "weight": number, "value": number|null }] }] }`
 
 ## Schedule
 
@@ -417,13 +461,17 @@ Notas:
 - `GET /course-detail/sections/:sectionId/announcements`
 - `GET /course-detail/sections/:sectionId/advising`
 - `GET /course-detail/sections/:sectionId/contacts`
+- `POST /course-detail/advising/:sessionId/rsvp` (HU17)
+- `DELETE /course-detail/advising/:sessionId/rsvp` (HU17)
 
 Notas:
 
-- Solo roles de alumno (`requireRole('student','delegate','subdelegate')`); un token docente recibe `403 FORBIDDEN`.
+- Solo roles de alumno (`requireRole('student','delegate','subdelegate')`); un token docente recibe `403 FORBIDDEN` (salvo `GET /advising` del detalle, permitido también a `teacher` para cargar contactos).
 - El estudiante solo ve secciones donde está matriculado.
 - Asesorías visibles: `section_id IS NULL` para el curso ofertado o `section_id` igual a su sección. Se incluyen las extras (`kind='extra'`) de la sección cuya `session_date` no sea pasada.
 - Cada asesoría agrega (HU18): `kind` (`recurring`/`extra`), `fecha` (`YYYY-MM-DD`, solo extras; `null` en recurrentes), `dictanteRol` (`"Profesor"` o `"JP"` según sea `section.teacher_id` o `section.jp_id`), `asistentes` (conteo de `advising_rsvp`). Los campos previos (`id, courseId, docenteCode, docente, dia, inicio, fin, aula, zoom`) no cambian.
+- **HU17**: cada asesoría agrega `myRsvp` (`boolean`) — `true` si el alumno autenticado ya confirmó su asistencia; siempre `false` con un token docente.
+- **HU17 RSVP** (`POST`/`DELETE /course-detail/advising/:sessionId/rsvp`): confirma/cancela la asistencia del alumno autenticado (`studentId` del JWT, nunca del body). Ambos idempotentes (unique `(advising_session_id, student_id)`; cancelar sin confirmación es no-op). Response `200`: `{ id, asistentes, myRsvp }` con el conteo actualizado. Errores: `404 ADVISING_SESSION_NOT_FOUND` (el alumno no participa de esa asesoría: no tiene matrícula activa en una sección que la vea) en `POST`; `403 ADVISING_RSVP_STUDENT_ONLY` si el token es docente. Viven en `course-detail` (no en `advising`) porque el módulo `advising` está gateado a `teacher`.
 - Contactos agrega la clave top-level `jefePractica` (`{ code, lastName, firstName }` o `null`) desde `section.jp_id`, entre `docente` y `alumnos`.
 - Anuncios visibles solo si pertenecen a la sección del estudiante.
 
@@ -440,7 +488,7 @@ Rol requerido: `teacher` (`requireRole('teacher')`). Detalle y reglas en `specs/
 Notas:
 
 - Todo el módulo comparte la guarda defensiva `401 TEACHER_NOT_FOUND` (contexto sin `teacherId`; no ocurre tras `authMiddleware`+`requireRole('teacher')`).
-- Los endpoints de RSVP del alumno (`POST/DELETE /advising/sessions/:id/rsvp`) pertenecen a HU17 y se documentan en su spec; HU18 solo lee `advising_rsvp` (conteo/lista).
+- Los endpoints de RSVP del alumno (HU17) viven en el módulo de alumno `course-detail` (`POST/DELETE /course-detail/advising/:sessionId/rsvp`), **no** aquí: este módulo está gateado a `teacher`. HU18 solo lee `advising_rsvp` (conteo/lista de confirmados).
 
 ## Alerts
 
@@ -475,8 +523,22 @@ Puente de auth entre el JWT propio y Firebase para el chat en vivo (Firebase RTD
 
 - `POST /chat/token` — verifica el JWT propio, deriva el rol/pertenencia del solicitante en la sección (desde `enrollment` + `section_representative`, o `section.teacher_id`/`jp_id`), escribe el espejo de membresía `/members/{sectionId}/{uid}` en RTDB (el backend es el ÚNICO que lo escribe) y firma un **custom token** de Firebase (`uid = app_user.id`). Body: `{ "sectionId": number }` (acepta string; se coacciona con `z.coerce.number()`). Response: `{ "token", "uid", "displayName", "role", "roleLabel", "isModerator", "weight" }`. `role ∈ {teacher, jp, delegate, subdelegate, student}`; `weight` = 100/90/70/60/10; `isModerator` = true salvo alumno raso.
 - Error principal: `403 CHAT_SECTION_FORBIDDEN` (no pertenece a la sección, o el `userId` del JWT no coincide con el participante).
+- `DELETE /chat/sections/:sectionId/messages/:messageId` — **(HU23) borrado suave de un mensaje**, gateado a `requireRole('teacher')`. El controller valida además que el solicitante sea el **PROFESOR TITULAR** de esa sección (participante con `role == 'teacher'`, no el JP ni representantes, y `userId` del JWT == participante). Marca el mensaje en RTDB con `{ deleted: true, deletedBy, deletedByUid, deletedByRole, deletedAt }` vía **Admin SDK** (salta las reglas RTDB) → el cliente lo muestra como lápida "eliminado por <profesor>". Response `200`: `{ deleted: true, messageId, deletedBy }`. Errores: `403 CHAT_DELETE_FORBIDDEN` (no es el profesor titular de la sección), `404 CHAT_MESSAGE_NOT_FOUND`, `400 INVALID_ROUTE_PARAMS`.
 
 Notas:
 
-- Las reglas de seguridad de RTDB (lectura/escritura/borrado por membresía) viven en Firebase y se validan con **Firebase Emulator** (fuera de la suite Bun).
+- Las reglas de seguridad de RTDB (lectura/escritura/borrado por membresía) viven en `ULima_Frontend_IS2/database.rules.json` y se validan con **Firebase Emulator** (fuera de la suite Bun). ⚠️ El `$msg .write` es **solo-crear** desde el cliente (no borra ni edita); el borrado suave lo hace el backend con Admin SDK. Tras cambiar `database.rules.json` hay que redeplegar: `firebase deploy --only database` (proyecto `ulima-plus-chat`, requiere acceso a Firebase).
 - Requiere `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, `FIREBASE_DATABASE_URL` en el entorno; si faltan, el servicio no firma tokens (chat deshabilitado). ⚠️ Fijar `firebase-admin@12.1.0` (v13/v14 rompen Vercel con `ERR_REQUIRE_ESM`).
+
+## Networking (HU27 — carnet) — PROPUESTO, pendiente de implementar
+
+> Contrato **propuesto** para HU27 (asignada a meltiruiz). La BD ya está lista (migración `drizzle/0001`). Detalle en `specs/features/networking/networking.spec.md`. Aplica a todos los usuarios (alumnos y docentes).
+
+- `GET /networking/me` — carnet del usuario autenticado. Response: `{ "optIn": boolean, "links": [ { "platform", "url", "label"? } ] }`.
+- `PUT /networking/me` — actualiza opt-in + reemplaza el set de enlaces. Body: `{ "optIn": boolean, "links": [ { "platform": "linkedin|instagram|github|x|website|other", "url": "https://…", "label"?: "string<=80" } ] }`. Reglas: máx. 1 enlace por plataforma, `url` http(s) ≤255, `label` requerida solo para `website`/`other`. Edita solo el carnet propio (derivado del JWT). Response: el carnet actualizado.
+- `GET /networking/users/:userId` — carnet **público** de otro usuario, **solo si** `networking_opt_in = true`. Response: `{ "userId", "fullName", "roleLabel"?, "links": [...] }`. Error: `404 NETWORKING_NOT_PUBLIC` si no dio opt-in.
+
+Notas:
+
+- El carnet solo se expone si el dueño hizo opt-in; quitar el opt-in lo oculta sin borrar los enlaces.
+- Compartir en el chat de sección: el mensaje referencia `userId` y el receptor resuelve el carnet vía `GET /networking/users/:userId` (fuente de verdad = Postgres, no se duplican redes en Firebase). Solo el carnet propio y en secciones donde el usuario es miembro.

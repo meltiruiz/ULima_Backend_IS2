@@ -4,9 +4,6 @@ import { sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { authMiddleware, requireRole, STUDENT_ROLES } from "../../shared/middleware/auth-middleware.js";
 
-const dayName = (day: number) =>
-  ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"][day - 1] ?? "Por definir";
-
 const splitName = (fullName: string) => {
   if (fullName.includes(",")) {
     const parts = fullName.split(",");
@@ -147,66 +144,15 @@ export const createCourseDetailRoutes = (controller: CourseDetailController) => 
 
   app.get("/sections/:sectionId/announcements", (c) => controller.getAnnouncements(c));
 
+  // El listado de asesorías del alumno (con kind/fecha/dictanteRol/asistentes de
+  // HU18 y myRsvp de HU17) se resuelve por las capas controller→service→repository.
   app.get("/sections/:sectionId/advising", (c) => controller.getAdvising(c));
 
-  app.get("/sections/:sectionId/advising", async (c) => {
-    const sectionId = Number(c.req.param("sectionId"));
-    try {
-      const rows = await db.execute(sql`
-        select
-          cas.id,
-          cas.course_offering_id,
-          cas.section_id,
-          cas.day_of_week,
-          cas.start_time,
-          cas.end_time,
-          cas.classroom,
-          cas.meeting_url,
-          cas.kind,
-          cas.session_date::text as session_date,
-          t.teacher_code,
-          t.full_name,
-          -- HU18: etiqueta del dictante según sea el titular o el JP de la sección.
-          case when cas.teacher_id = sec.jp_id then 'JP' else 'Profesor' end as dictante_rol,
-          (select count(*)::int from advising_rsvp r where r.advising_session_id = cas.id) as asistentes
-        from course_advising_session cas
-        join teacher t on t.id = cas.teacher_id
-        join section sec on sec.course_offering_id = cas.course_offering_id
-        where sec.id = ${sectionId}
-          and (cas.section_id is null or cas.section_id = ${sectionId})
-          -- No listar extras cuya fecha ya pasó.
-          and (cas.kind = 'recurring' or cas.session_date >= current_date)
-        order by
-          case when cas.kind = 'extra' then 0 else 1 end,
-          cas.session_date nulls last, cas.day_of_week, cas.start_time
-      `) as unknown as Array<any>;
-
-      return c.json({
-        asesorias: rows.map((row) => ({
-          id: String(row.id),
-          courseId: String(row.course_offering_id),
-          docenteCode: row.teacher_code ?? "",
-          docente: {
-            code: row.teacher_code ?? "",
-            ...splitName(row.full_name),
-          },
-          dia: dayName(Number(row.day_of_week)),
-          inicio: row.start_time ?? "",
-          fin: row.end_time ?? "",
-          aula: row.classroom ?? "Por definir",
-          zoom: row.meeting_url ?? "",
-          // HU18: nuevos campos (los previos no cambian → APKs viejos siguen funcionando).
-          kind: row.kind ?? "recurring",
-          fecha: row.session_date ?? null,
-          dictanteRol: row.dictante_rol ?? "Profesor",
-          asistentes: Number(row.asistentes ?? 0),
-        })),
-      });
-    } catch (e) {
-      console.error(`DB Error in /sections/${sectionId}/advising`, e);
-      return c.json({ asesorias: [] });
-    }
-  });
+  // HU17: confirmar/cancelar asistencia a una asesoría. Solo alumnos (un token de
+  // docente no lleva `studentId` → 403 en el controller). El módulo `advising`
+  // está gateado a `teacher`, por eso estos endpoints viven en course-detail.
+  app.post("/advising/:sessionId/rsvp", (c) => controller.confirmRsvp(c));
+  app.delete("/advising/:sessionId/rsvp", (c) => controller.cancelRsvp(c));
 
   app.get("/sections/:sectionId/contacts", async (c) => {
     const sectionId = Number(c.req.param("sectionId"));
@@ -273,6 +219,129 @@ export const createCourseDetailRoutes = (controller: CourseDetailController) => 
       console.error(`DB Error in /sections/${sectionId}/contacts`, e);
       return c.json({ docente: null, alumnos: [] });
     }
+  });
+
+  // ─── Attendance Risk ────────────────────────────────────────────────────────
+  // Umbral Ulima: ≥25 % → impedido, ≥20 % → en_riesgo (< 20 % = normal).
+  // Sólo docentes deben ver esto; teacher ya está en requireRole arriba.
+
+  /** Calcula el estado de riesgo basado en el porcentaje de ausencias. */
+  const riskStatus = (absentHours: number, totalHours: number): "impedido" | "en_riesgo" | "normal" => {
+    if (totalHours === 0) return "normal";
+    const pct = (absentHours / totalHours) * 100;
+    if (pct >= 25) return "impedido";
+    if (pct >= 20) return "en_riesgo";
+    return "normal";
+  };
+
+  // GET /sections/:sectionId/attendance-risk → lista completa de alumnos en riesgo
+  app.get("/sections/:sectionId/attendance-risk", async (c) => {
+    const sectionId = Number(c.req.param("sectionId"));
+    if (Number.isNaN(sectionId)) return c.json({ students: [] }, 400);
+    try {
+      const rows = await db.execute(sql`
+        select
+          au.code,
+          au.full_name,
+          s.current_level,
+          e.absent_hours::float  as absent_hours,
+          e.total_hours::float   as total_hours,
+          round(
+            case when e.total_hours = 0 then 0
+                 else (e.absent_hours / e.total_hours) * 100
+            end,
+            2
+          )::float as absence_percentage
+        from enrollment e
+        join student s   on s.id  = e.student_id
+        join app_user au on au.id = s.user_id
+        where e.section_id = ${sectionId}
+          and e.status = 'active'
+        order by absence_percentage desc, au.full_name
+      `) as unknown as Array<{
+        code: string;
+        full_name: string;
+        current_level: number | null;
+        absent_hours: number;
+        total_hours: number;
+        absence_percentage: number;
+      }>;
+
+      const students = rows
+        .map((row) => {
+          const { lastName, firstName } = splitName(row.full_name);
+          const status = riskStatus(row.absent_hours, row.total_hours);
+          // missingFaltas: cuántas horas más bastan para llegar al 25 % (impedido).
+          // Si ya es impedido, null.
+          const horasParaImpedido = Math.ceil(row.total_hours * 0.25) - row.absent_hours;
+          return {
+            code: row.code,
+            firstName,
+            lastName,
+            currentLevel: row.current_level ?? null,
+            absentHours: Math.round(row.absent_hours),
+            totalHours: Math.round(row.total_hours),
+            absencePercentage: row.absence_percentage,
+            status,
+            missingFaltas: status === "en_riesgo" && horasParaImpedido > 0
+              ? horasParaImpedido
+              : null,
+          };
+        })
+        .filter((s) => s.status !== "normal");   // solo los que tienen riesgo
+
+      return c.json({ students });
+    } catch (e) {
+      console.error(`DB Error in /sections/${sectionId}/attendance-risk`, e);
+      return c.json({ students: [] }, 500);
+    }
+  });
+
+  // GET /sections/:sectionId/attendance-risk/summary → contadores para la tarjeta resumen
+  app.get("/sections/:sectionId/attendance-risk/summary", async (c) => {
+    const sectionId = Number(c.req.param("sectionId"));
+    if (Number.isNaN(sectionId)) return c.json({ summary: { impedido: 0, en_riesgo: 0, total: 0 } }, 400);
+    try {
+      const rows = await db.execute(sql`
+        select
+          count(*) filter (
+            where e.total_hours > 0
+              and (e.absent_hours / e.total_hours) >= 0.25
+          )::int as impedido,
+          count(*) filter (
+            where e.total_hours > 0
+              and (e.absent_hours / e.total_hours) >= 0.20
+              and (e.absent_hours / e.total_hours) < 0.25
+          )::int as en_riesgo,
+          count(*)::int as total
+        from enrollment e
+        where e.section_id = ${sectionId}
+          and e.status = 'active'
+      `) as unknown as Array<{ impedido: number; en_riesgo: number; total: number }>;
+
+      const row = rows[0] ?? { impedido: 0, en_riesgo: 0, total: 0 };
+      return c.json({
+        summary: {
+          impedido: Number(row.impedido),
+          en_riesgo: Number(row.en_riesgo),
+          total: Number(row.total),
+        },
+      });
+    } catch (e) {
+      console.error(`DB Error in /sections/${sectionId}/attendance-risk/summary`, e);
+      return c.json({ summary: { impedido: 0, en_riesgo: 0, total: 0 } }, 500);
+    }
+  });
+
+  // POST /sections/:sectionId/attendance-risk/notify → notifica a alumnos en riesgo
+  // Implementación actual: stub (retorna 200). La integración de correos se puede
+  // añadir conectando Resend igual que en el módulo de auth.
+  app.post("/sections/:sectionId/attendance-risk/notify", async (c) => {
+    const sectionId = Number(c.req.param("sectionId"));
+    if (Number.isNaN(sectionId)) return c.json({ ok: false, notified: 0 }, 400);
+    // TODO: enviar correo a cada alumno en riesgo usando Resend.
+    console.info(`[attendance-risk/notify] sectionId=${sectionId} — notificación stub`);
+    return c.json({ ok: true, notified: 0 });
   });
 
   return app;

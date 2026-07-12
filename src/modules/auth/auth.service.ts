@@ -18,7 +18,22 @@ import {
 } from "./password-reset.logic.js";
 import { sendPasswordResetEmail } from "../../shared/email/resend-client.js";
 
-const googleClient = new OAuth2Client();
+type GoogleIdTokenPayload = {
+  email?: string;
+  sub?: string;
+};
+
+/** Dependencia mínima del cliente de Google, inyectable para probar el flujo
+ * sin llamar a servicios externos. */
+export type GoogleTokenVerifier = {
+  verifyIdToken(input: { idToken: string }): Promise<{
+    getPayload(): GoogleIdTokenPayload | undefined;
+  }>;
+};
+
+const googleClient: GoogleTokenVerifier = new OAuth2Client();
+const STUDENT_EMAIL_SUFFIX = "@aloe.ulima.edu.pe";
+const TEACHER_EMAIL_SUFFIX = "@ulima.edu.pe";
 
 // Mismo costo por defecto de bcryptjs (10) usado en los hashes existentes de app_user.
 const BCRYPT_COST = 10;
@@ -35,6 +50,7 @@ export class AuthService {
   constructor(
     readonly repository: AuthRepository,
     readonly events: EventBus,
+    private readonly googleTokenVerifier: GoogleTokenVerifier = googleClient,
   ) {}
 
   async login(input: { code: string; password: string }) {
@@ -116,18 +132,65 @@ export class AuthService {
 
   async loginWithGoogle(input: { idToken: string }) {
     try {
-      const ticket = await googleClient.verifyIdToken({
-        idToken: input.idToken,
-      });
+      let ticket: Awaited<ReturnType<GoogleTokenVerifier["verifyIdToken"]>>;
+      try {
+        ticket = await this.googleTokenVerifier.verifyIdToken({
+          idToken: input.idToken,
+        });
+      } catch {
+        // Firma, issuer o expiración inválidos son un fallo de credencial,
+        // no un error interno. Los errores posteriores de BD conservan 500.
+        throw new HttpError(401, "Token de Google inválido.", "INVALID_TOKEN");
+      }
       const payload = ticket.getPayload();
-      
+
       if (!payload || !payload.email) {
         throw new HttpError(401, "Token de Google inválido.", "INVALID_TOKEN");
       }
-      
-      const email = payload.email;
-      if (!email.endsWith("@aloe.ulima.edu.pe")) {
-        throw new HttpError(403, "Debe usar un correo institucional (@aloe.ulima.edu.pe).", "INVALID_DOMAIN");
+
+      const email = payload.email.trim().toLowerCase();
+      if (!email) {
+        throw new HttpError(401, "Token de Google inválido.", "INVALID_TOKEN");
+      }
+
+      const isStudentEmail = email.endsWith(STUDENT_EMAIL_SUFFIX);
+      const isTeacherEmail = email.endsWith(TEACHER_EMAIL_SUFFIX);
+
+      if (!isStudentEmail && !isTeacherEmail) {
+        throw new HttpError(
+          403,
+          "Debe usar un correo institucional (@aloe.ulima.edu.pe o @ulima.edu.pe).",
+          "INVALID_DOMAIN",
+        );
+      }
+
+      // HU18: el dominio docente habilita el lookup del perfil, pero no otorga
+      // el rol por sí solo. La cuenta debe estar vinculada a teacher.user_id.
+      if (isTeacherEmail) {
+        const teacher = await this.repository.findTeacherByEmail(email);
+        if (!teacher) {
+          throw new HttpError(401, "Usuario no registrado en la base de datos.", "USER_NOT_FOUND");
+        }
+
+        if (payload.sub) {
+          await this.repository.linkGoogleId(teacher.id, payload.sub);
+        }
+
+        const newTokenVersion = await this.repository.incrementTokenVersion(teacher.id);
+        const authenticatedTeacher = { ...teacher, tokenVersion: newTokenVersion };
+
+        return {
+          token: this.signToken({
+            userId: authenticatedTeacher.id,
+            teacherId: authenticatedTeacher.teacherId,
+            code: authenticatedTeacher.code,
+            role: "teacher",
+            tokenVersion: newTokenVersion,
+          }),
+          tokenType: "Bearer",
+          expiresIn: config.auth.jwtExpiresIn,
+          user: authenticatedTeacher,
+        };
       }
 
       const user = await this.repository.findByEmail(email);

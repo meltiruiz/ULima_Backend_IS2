@@ -71,6 +71,10 @@ export class AlertsService {
     // Return all alerts augmented with course info
     const alerts = await this.repository.getAlerts(studentId);
     return this.augmentAlerts(alerts, courseMap);
+    // Retornar solo alertas del período activo actual para evitar que alertas
+    // de semestres anteriores aparezcan en el buzón del alumno.
+    const periodStart = await this.repository.getActivePeriodStart();
+    return await this.repository.getAlerts(studentId, periodStart ?? undefined);
   }
 
   async markAlertAsRead(studentId: number, alertId: number): Promise<boolean> {
