@@ -27,16 +27,24 @@ El backend verifica el JWT propio (`authMiddleware`), resuelve al solicitante co
   `[@test] ../../../test/chat.controller.test.ts` (profesor válido, alumno raso, delegado)
 
 ### R-CHAT-2 — Derivación de rol/peso/moderador
-El rol de chat determina etiqueta, peso y si es moderador (puede borrar cualquier mensaje):
+El rol de chat determina etiqueta, peso y si es moderador (badge/estilo de la burbuja):
 - `teacher`=100, `jp`=90, `delegate`=70, `subdelegate`=60, `student`=10; moderador = todos salvo `student`.
 - Un alumno se mapea a `delegate`/`subdelegate` según su `position` activa en `section_representative`, o `student` si no es representante.
+- `moderator` es solo presentación (etiqueta de rol en la burbuja); **NO** habilita borrar mensajes (ver R-CHAT-4).
   `[@test] ../../../test/chat.logic.test.ts` (roleLabel, roleWeight, isModeratorRole, studentRoleFromPosition, buildParticipant, canIssueToken)
 
 ### R-CHAT-3 — Postgres no se migra; el cliente nunca escribe membresía
 Firebase RTDB guarda solo mensajes + el espejo `/members`. El backend es el ÚNICO que escribe `/members` (el cliente lo tiene denegado por reglas). Sin Cloud Functions (plan Spark).
 
+### R-CHAT-4 — Borrado suave de mensajes (solo el profesor titular)
+`DELETE /chat/sections/:sectionId/messages/:messageId`, gateado a `requireRole('teacher')`. El controller autoriza **SOLO al profesor titular** de esa sección: el participante devuelto por `findTeacherParticipant` debe tener `role == 'teacher'` (NO el JP ni representantes) y su `userId` debe coincidir con el del JWT.
+- No borra el nodo: lo marca (borrado suave) con `{ deleted:true, deletedBy, deletedByUid, deletedByRole, deletedAt }` vía **Admin SDK** (`firebaseService.softDeleteChatMessage`), que salta las reglas RTDB. El cliente renderiza la lápida "eliminado por <profesor>".
+- Rechazos: `403 CHAT_DELETE_FORBIDDEN` (sin teacherId / no dicta la sección / es JP / userId ≠ participante), `404 CHAT_MESSAGE_NOT_FOUND` (el mensaje no existe), `400 INVALID_ROUTE_PARAMS`.
+  `[@test] ../../../test/chat.controller.test.ts` (profesor titular ⇒ ok+lápida; sin teacherId; no-dictante; JP ⇒ 403; userId ≠ participante; mensaje inexistente ⇒ 404)
+- Las reglas RTDB (`ULima_Frontend_IS2/database.rules.json`) endurecen el `$msg .write` del cliente a **solo-crear** (no borra ni edita), reforzando que el único camino de borrado es este endpoint teacher-only. Requiere redeploy: `firebase deploy --only database`.
+
 ## Fuera de alcance de esta spec (validado aparte)
-- Reglas de seguridad de RTDB (lectura/escritura/borrado por membresía y por rol) → **Firebase Emulator**.
+- Reglas de seguridad de RTDB (lectura/escritura por membresía; `$msg` solo-crear) → **Firebase Emulator**.
 - Realtime del SDK y la pantalla FlutterFire → sub-issue frontend HU23_Frontend (#124).
 
 ## Notas de despliegue
