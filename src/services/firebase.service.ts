@@ -129,6 +129,41 @@ class FirebaseService {
       return [];
     }
   }
+
+  /**
+   * HU23: soft delete a chat message by marking it instead of removing it.
+   * The backend already validates authorization before calling this method.
+   */
+  public async softDeleteChatMessage(
+    sectionId: number,
+    messageId: string,
+    patch: { deletedBy: string; deletedByUid: string; deletedByRole: string },
+  ): Promise<{ existed: boolean }> {
+    if (!this.initialized) {
+      throw new Error("Firebase Admin SDK is not initialized.");
+    }
+    if (!config.firebase.databaseUrl) {
+      throw new Error("Firebase Realtime Database URL is not configured.");
+    }
+
+    try {
+      const ref = getDatabase().ref(`sections/${sectionId}/messages/${messageId}`);
+      const snapshot = await ref.get();
+      if (!snapshot.exists()) return { existed: false };
+
+      await ref.update({
+        deleted: true,
+        deletedBy: patch.deletedBy,
+        deletedByUid: patch.deletedByUid,
+        deletedByRole: patch.deletedByRole,
+        deletedAt: Date.now(),
+      });
+      return { existed: true };
+    } catch (error) {
+      console.error("Error soft-deleting chat message:", error);
+      throw new Error("Failed to delete chat message");
+    }
+  }
 }
 
 export const firebaseService = FirebaseService.getInstance();

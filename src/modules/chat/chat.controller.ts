@@ -49,4 +49,53 @@ export class ChatController {
       weight: participant.weight,
     };
   }
+
+  /**
+   * HU23: elimina (borrado suave) un mensaje del chat de la sección. Autorización:
+   * SOLO el **profesor titular** de esa sección (rol `teacher`, no el JP ni
+   * representantes). Escribe la lápida vía Admin SDK; el mensaje queda como
+   * "eliminado por <profesor>". 403 si no es el profesor de la sección.
+   */
+  async deleteMessage(input: {
+    sectionId: number;
+    messageId: string;
+    userId: number;
+    teacherId?: number;
+  }) {
+    const participant = input.teacherId == null
+      ? null
+      : await this.repository.findTeacherParticipant(input.teacherId, input.sectionId);
+
+    if (
+      participant == null ||
+      participant.userId !== input.userId ||
+      participant.role !== "teacher"
+    ) {
+      throw new HttpError(
+        403,
+        "Solo el profesor del curso puede eliminar mensajes.",
+        "CHAT_DELETE_FORBIDDEN",
+      );
+    }
+
+    const result = await firebaseService.softDeleteChatMessage(
+      input.sectionId,
+      input.messageId,
+      {
+        deletedBy: participant.displayName,
+        deletedByUid: participant.uid,
+        deletedByRole: participant.role,
+      },
+    );
+
+    if (!result.existed) {
+      throw new HttpError(404, "El mensaje no existe.", "CHAT_MESSAGE_NOT_FOUND");
+    }
+
+    return {
+      deleted: true,
+      messageId: input.messageId,
+      deletedBy: participant.displayName,
+    };
+  }
 }
