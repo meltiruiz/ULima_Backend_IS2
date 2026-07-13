@@ -3,7 +3,7 @@ name: Espejo meltiruiz/main -> deploy
 # Mantiene este fork (itsRon4ld/ULima_Backend_IS2, rama main = la que despliega
 # Vercel) como copia-espejo de meltiruiz/ULima_Backend_IS2 (rama main).
 #
-# - Corre cada 15 min y tambien a mano (workflow_dispatch).
+# - Corre cada 5 min y tambien a mano (workflow_dispatch).
 # - Solo empuja cuando meltiruiz/main cambio, para no redesplegar en vano.
 # - El unico commit propio del fork es este workflow; se auto-preserva al
 #   re-espejar (si no, un reset duro a upstream lo borraria y el cron se
@@ -12,7 +12,7 @@ name: Espejo meltiruiz/main -> deploy
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
