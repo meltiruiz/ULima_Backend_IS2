@@ -29,6 +29,11 @@ export class SectionManagementController {
     return c.json(await this.service.getAnnouncements(this.requireStudentId(c), sectionId));
   }
 
+  async getStatistics(c: Context) {
+    const { sectionId } = validateParams(c, sectionIdParamSchema);
+    return c.json(await this.service.getStatistics(this.requireStudentId(c), sectionId));
+  }
+
   async createAnnouncement(c: Context) {
     const { sectionId } = validateParams(c, sectionIdParamSchema);
     const body = await validateJson(c, createAnnouncementSchema);
