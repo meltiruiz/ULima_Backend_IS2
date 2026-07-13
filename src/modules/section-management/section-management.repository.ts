@@ -74,7 +74,9 @@ export class SectionManagementRepository {
       : null;
   }
 
-  async findAnnouncementsBySection(sectionId: number): Promise<AnnouncementRow[]> {
+  async findAnnouncementsByRepresentative(
+    sectionRepresentativeId: number,
+  ): Promise<AnnouncementRow[]> {
     return (await this.database.execute(sql`
       select
         a.id,
@@ -92,7 +94,7 @@ export class SectionManagementRepository {
       join enrollment e on e.id = sr.enrollment_id
       join student st on st.id = e.student_id
       join app_user au on au.id = st.user_id
-      where sr.section_id = ${sectionId}
+      where a.section_representative_id = ${sectionRepresentativeId}
         and a.is_active = true
       order by a.published_at desc
     `)) as unknown as AnnouncementRow[];
