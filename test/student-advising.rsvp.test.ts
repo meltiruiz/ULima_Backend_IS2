@@ -38,6 +38,12 @@ const buildRow = (over: Partial<RawAdvisingRow> = {}): RawAdvisingRow => ({
   ...over,
 });
 
+// `now` fijo para los tests de mapeo: martes 2026-07-14. La fila por defecto es una
+// asesoría RECURRENTE de lunes (day_of_week: 1); con un martes como referencia nunca
+// cuenta como "pasada", así el test es determinista y no depende de cuándo se corra
+// (antes fallaba si se corría un lunes después de las 11:00).
+const NOW_REF = new Date("2026-07-14T12:00:00-05:00");
+
 const fakeCtx = (params: Record<string, string>, vars: Record<string, unknown>): Context =>
   ({
     req: { param: () => params },
@@ -173,7 +179,7 @@ describe("StudentService.getAdvising", () => {
       noopEvents,
     );
 
-    const { asesorias } = await service.getAdvising(1, 6);
+    const { asesorias } = await service.getAdvising(1, 6, NOW_REF);
     expect(seenStudentId).toBe(6);
     expect(asesorias[0].myRsvp).toBe(true);
     expect(asesorias[0].asistentes).toBe(5);
@@ -189,7 +195,7 @@ describe("StudentService.getAdvising", () => {
       noopEvents,
     );
 
-    const { asesorias } = await service.getAdvising(1);
+    const { asesorias } = await service.getAdvising(1, undefined, NOW_REF);
     expect(asesorias[0].myRsvp).toBe(false);
     expect(asesorias[0].kind).toBe("recurring");
     expect(asesorias[0].dictanteRol).toBe("Profesor");
