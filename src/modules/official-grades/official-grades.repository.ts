@@ -12,28 +12,30 @@ export class OfficialGradesRepository {
     return Number(rows[0].id);
   }
 
-  // ¿El docente es profesor titular o JP de la sección?
-  async teacherOwnsSection(teacherId: number, sectionId: number): Promise<boolean> {
+  // ¿El docente es el PROFESOR TITULAR de la sección? Solo el titular califica;
+  // el JP (jp_id) NO sube notas oficiales (da asesorías, no calificaciones).
+  async teacherIsSectionProfesor(teacherId: number, sectionId: number): Promise<boolean> {
     const rows = await this.database.execute(sql`
       select 1 from section
-      where id = ${sectionId} and (teacher_id = ${teacherId} or jp_id = ${teacherId})
+      where id = ${sectionId} and teacher_id = ${teacherId}
       limit 1
     `) as unknown as Array<unknown>;
     return rows.length > 0;
   }
 
-  // Secciones del período activo donde el docente es profesor titular o JP.
+  // Secciones del período activo que el docente CALIFICA: solo donde es profesor
+  // titular (teacher_id). El JP no aparece aquí (no sube notas).
   async findTeacherSections(teacherId: number, periodId: number) {
     return await this.database.execute(sql`
       select
         sec.id as "sectionId",
         c.name as "courseName",
         sec.code as "sectionCode",
-        case when sec.jp_id = ${teacherId} then 'JP' else 'Profesor' end as "rol"
+        'Profesor' as "rol"
       from section sec
       join course_offering co on co.id = sec.course_offering_id and co.academic_period_id = ${periodId}
       join course c on c.id = co.course_id
-      where sec.teacher_id = ${teacherId} or sec.jp_id = ${teacherId}
+      where sec.teacher_id = ${teacherId}
       order by c.name, sec.code
     `) as unknown as Array<{ sectionId: number; courseName: string; sectionCode: string; rol: "Profesor" | "JP" }>;
   }
