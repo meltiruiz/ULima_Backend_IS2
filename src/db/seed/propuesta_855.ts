@@ -7,7 +7,8 @@
 //   bun run src/db/seed/propuesta_855.ts --apply   # aplica en UNA transacción
 //
 // Deja la sección con EXACTAMENTE los 17 alumnos de la lista (matrícula activa):
-//  - crea los que falten (app_user + student + enrollment), password `ulima2026`.
+//  - crea los que falten (app_user + student + enrollment), password vía env
+//    STUDENT_PASSWORD (requerida, sin default en el código).
 //  - conserva a los que ya estén en la lista (p.ej. Jeff, delegado con notas).
 //  - QUITA la matrícula en la sección 5 de cualquier alumno que NO esté en la
 //    lista (borra solo su enrollment en la 5; su cuenta y sus otras secciones
@@ -19,7 +20,13 @@ import bcrypt from "bcryptjs";
 
 const APPLY = process.argv.includes("--apply");
 const BCRYPT_COST = 10;
-const STUDENT_PASSWORD = "ulima2026";
+// Contraseña: se lee del entorno, SIN default hardcodeado, para no versionar
+// credenciales en un repo público. Definir STUDENT_PASSWORD antes de correr.
+const STUDENT_PASSWORD = process.env.STUDENT_PASSWORD;
+if (!STUDENT_PASSWORD) {
+  console.error("❌ Falta STUDENT_PASSWORD en el entorno. Defínela antes de correr el seed.");
+  process.exit(1);
+}
 const CAREER_ID = 1;      // Ingeniería de Sistemas
 const CURRICULUM_ID = 1;  // Malla Curricular Ingeniería de Sistemas
 const CURRENT_LEVEL = 8;

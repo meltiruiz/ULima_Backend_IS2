@@ -208,4 +208,4 @@ psql "$DATABASE_URL"       # requiere datos móviles (wifi ULima bloquea 5432)
 
 - Backup pre-migración: cliente pg18 (`brew install postgresql@18`) o, si la migración es solo aditiva, snapshot de conteos (`SELECT relname, n_live_tup FROM pg_stat_user_tables`) + script de rollback.
 - Freeze de DDL 48 h antes de una demo.
-- Cuentas de prueba: alumno RONALD HURTADO (`20231483`, student 2); docentes `hquintan`/`profesor2026` (titular 856) y `alo`/`jefe2026` (JP 856).
+- Cuentas de prueba: alumno RONALD HURTADO (`20231483`, student 2); docentes `hquintan` (titular 856) y `alo` (JP 856). Las contraseñas NO se documentan aquí: se fijan vía env (`PROF_PASSWORD`/`JP_PASSWORD`) al correr el seed y se comunican fuera de banda.

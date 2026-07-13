@@ -14,9 +14,13 @@
 //   JP_FULLNAME="Lo Li, Aaron" nombre del JP (formato "Apellidos, Nombres")
 //   JP_USERNAME=alo            fuerza el usuario del JP
 //
+// Contraseñas (REQUERIDAS, sin default en el código para no versionar credenciales):
+//   PROF_PASSWORD=...          contraseña de la cuenta del profesor
+//   JP_PASSWORD=...            contraseña de la cuenta del JP
+//
 // Convención de cuenta docente: usuario = inicial del nombre + apellido paterno
 // (minúsculas, sin tildes, máx 8 chars); correo <usuario>@ulima.edu.pe;
-// contraseña profesor2026 (profesor) / jefe2026 (JP), bcrypt costo 10.
+// contraseña vía env PROF_PASSWORD/JP_PASSWORD (requeridas), bcrypt costo 10.
 
 import "dotenv/config";
 import postgres from "postgres";
@@ -37,8 +41,19 @@ const APPLY = process.argv.includes("--apply");
 const STUDENT_CODE = process.env.STUDENT_CODE ?? "20235218";
 const TARGET_SECTION_ID = process.env.TARGET_SECTION_ID ? Number(process.env.TARGET_SECTION_ID) : null;
 const JP_FULLNAME = process.env.JP_FULLNAME ?? "Lo Li, Aaron";
-const PROF_PASSWORD = "profesor2026";
-const JP_PASSWORD = "jefe2026";
+// Contraseñas: se leen del entorno, SIN default hardcodeado, para no versionar
+// credenciales en un repo público. Definir antes de correr el seed.
+const PROF_PASSWORD = process.env.PROF_PASSWORD;
+const JP_PASSWORD = process.env.JP_PASSWORD;
+if (!PROF_PASSWORD || !JP_PASSWORD) {
+  console.error(
+    "❌ Falta PROF_PASSWORD y/o JP_PASSWORD en el entorno. " +
+      "Defínelas (p.ej. PROF_PASSWORD=... JP_PASSWORD=... bun run src/db/seed/docentes.ts) antes de correr el seed.",
+  );
+  process.exit(1);
+}
+/** Enmascara una contraseña para logs (muestra 2 chars + ****). */
+const mask = (s: string) => (s.length <= 2 ? "****" : `${s.slice(0, 2)}****`);
 const BCRYPT_COST = 10;
 const EMAIL_DOMAIN = "@ulima.edu.pe";
 
@@ -136,10 +151,10 @@ async function main() {
 
   console.log(`\nPlan:`);
   console.log(`  Profesor: ${target.teacher_name}`);
-  console.log(`    usuario=${profUsername}  correo=${profEmail}  pass=${PROF_PASSWORD}`);
+  console.log(`    usuario=${profUsername}  correo=${profEmail}  pass=${mask(PROF_PASSWORD)}`);
   console.log(`    → app_user + teacher(id=${target.teacher_id}).user_id`);
   console.log(`  JP: ${JP_FULLNAME}`);
-  console.log(`    usuario=${jpUsername}  correo=${jpEmail}  pass=${JP_PASSWORD}`);
+  console.log(`    usuario=${jpUsername}  correo=${jpEmail}  pass=${mask(JP_PASSWORD)}`);
   console.log(`    → teacher nuevo + app_user + section(${target.section_id}).jp_id`);
 
   // Regla de ciclo: el JP no debe ser profesor de ninguna sección del período.
@@ -210,8 +225,8 @@ async function main() {
   });
 
   console.log(`\n✓ Seed aplicado.`);
-  console.log(`  Profesor  → login ${profUsername} / ${PROF_PASSWORD}`);
-  console.log(`  JP (${JP_FULLNAME}) → login ${jpUsername} / ${JP_PASSWORD}`);
+  console.log(`  Profesor  → login ${profUsername} / ${mask(PROF_PASSWORD)}`);
+  console.log(`  JP (${JP_FULLNAME}) → login ${jpUsername} / ${mask(JP_PASSWORD)}`);
   console.log(`  section(${target.section_id}).jp_id = teacher ${jpTeacherId}\n`);
 }
 

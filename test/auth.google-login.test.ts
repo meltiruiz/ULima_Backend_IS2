@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import jwt, { type JwtPayload } from "jsonwebtoken";
+import jwt from "jsonwebtoken";
 import { config } from "../src/config/app-config.js";
 import { EventBus } from "../src/events/index.js";
 import type { AuthRepository } from "../src/modules/auth/auth.repository.js";
-import { AuthService } from "../src/modules/auth/auth.service.js";
+import { AuthService, type GoogleTokenVerifier } from "../src/modules/auth/auth.service.js";
 import type { AuthUser, TeacherAuthUser } from "../src/modules/auth/auth.types.js";
 
 type GooglePayload = {
@@ -72,12 +72,15 @@ const teacher: TeacherAuthUser = {
   setupComplete: true,
 };
 
-const verifierFor = (payload: GooglePayload | null) => ({
-  verifyIdToken: async ({ idToken }: { idToken: string }) => {
-    expect(idToken).toBe("google-id-token");
-    return { getPayload: () => payload };
-  },
-});
+// El verificador real espera GoogleIdTokenPayload | undefined; aquí devolvemos un
+// payload simplificado (y null), así que casteamos como se hace con el repo fake.
+const verifierFor = (payload: GooglePayload | null) =>
+  ({
+    verifyIdToken: async ({ idToken }: { idToken: string }) => {
+      expect(idToken).toBe("google-id-token");
+      return { getPayload: () => payload };
+    },
+  }) as unknown as GoogleTokenVerifier;
 
 const fakeRepository = (options: FakeRepositoryOptions = {}) => {
   const calls: RepositoryCalls = {
@@ -131,10 +134,21 @@ const createService = (
   return { service, calls };
 };
 
-const claimsFrom = (token: string): JwtPayload => {
+// El JWT firma `sub` con el id numérico y agrega claims propios; jsonwebtoken tipa
+// `sub` como string, así que describimos aquí la forma real del payload decodificado.
+type DecodedClaims = {
+  sub?: number;
+  studentId?: number;
+  teacherId?: number;
+  role?: string;
+  tokenVersion?: number;
+  [key: string]: unknown;
+};
+
+const claimsFrom = (token: string): DecodedClaims => {
   const claims = jwt.verify(token, config.auth.jwtSecret);
   if (typeof claims === "string") throw new Error("Se esperaba un JWT con payload JSON");
-  return claims;
+  return claims as unknown as DecodedClaims;
 };
 
 const expectHttpError = async (
@@ -196,8 +210,9 @@ describe("AuthService.loginWithGoogle", () => {
     const claims = claimsFrom(result.token);
 
     expect(result.user.role).toBe("teacher");
-    expect(result.user.teacherId).toBe(teacher.teacherId);
-    expect(result.user.teacherLabel).toBe("Profesor");
+    const teacherUser = result.user as TeacherAuthUser;
+    expect(teacherUser.teacherId).toBe(teacher.teacherId);
+    expect(teacherUser.teacherLabel).toBe("Profesor");
     expect(result.user.setupComplete).toBe(true);
     expect(result.user.tokenVersion).toBe(9);
     expect(claims.sub).toBe(teacher.id);
