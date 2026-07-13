@@ -17,6 +17,11 @@ import type { NotaInput } from "../../src/modules/grades/grades.types.js";
  * Sin mocks: PU-C1/C2 son funciones puras sin dependencias y PU-C3 valida el
  * esquema aislado. Los casos frontera (20/100 exactos, todo ceros, pesos que
  * exceden 100) están elegidos como "asesinos de mutantes" (>/>=, ±, recortes).
+ *
+ * MUTANTE EQUIVALENTE conocido (Stryker lo reporta como Survived y es
+ * imposible de matar): en grades.logic.ts:4, `if (notas.length === 0) return 0`
+ * -> `if (false)`. Con lista vacía el bucle no itera y la suma ya es 0, así
+ * que el programa mutado es semánticamente idéntico al original.
  */
 
 const n = (over: Partial<NotaInput> = {}): NotaInput => ({ valor: 15, peso: 30, ...over });

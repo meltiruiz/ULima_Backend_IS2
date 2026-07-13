@@ -126,6 +126,54 @@ describe("PU-I2 · en_riesgo, faltas restantes y guarda de división por cero (H
     expect(res.students[0].lastName).toBe("Perez Ruiz");
     expect(res.students[0].firstName).toBe("Juan Carlos");
   });
+
+  // ── Casos añadidos tras la 1ª corrida de mutación (Stryker): cada uno mata
+  // mutantes que sobrevivieron a la batería original ──────────────────────────
+
+  test("% fraccionario en la rama en_riesgo se redondea a 2 decimales (20h/90h -> 22.22)", async () => {
+    // Mata los mutantes aritméticos del redondeo (l.98: *100)/100 -> *100)*100 y /100)/100)
+    const res = await serviceWith([
+      row({ absent_hours: "20", total_section_hours: "90" }),
+    ]).getAttendanceRisk(1);
+
+    expect(res.students[0].status).toBe("en_riesgo");
+    expect(res.students[0].absencePercentage).toBe(22.22);
+  });
+
+  test("splitName con espacios extra: ' Ana  Torres ' -> 2 tokens limpios (Apellido Nombre)", async () => {
+    // Mata los mutantes de trim(), del regex /\s+/ -> /\s/ y de la rama length > 2
+    const res = await serviceWith([
+      row({ full_name: " Ana  Torres " }),
+    ]).getAttendanceRisk(1);
+
+    expect(res.students[0].lastName).toBe("Ana");
+    expect(res.students[0].firstName).toBe("Torres");
+  });
+
+  test("splitName con un solo token: todo es nombre y el apellido queda vacío", async () => {
+    const res = await serviceWith([row({ full_name: "Cher" })]).getAttendanceRisk(1);
+
+    expect(res.students[0].firstName).toBe("Cher");
+    expect(res.students[0].lastName).toBe("");
+  });
+
+  test("splitName con espacios alrededor de la coma: 'Quispe , Rosa' -> se recortan", async () => {
+    const res = await serviceWith([
+      row({ full_name: "Quispe , Rosa" }),
+    ]).getAttendanceRisk(1);
+
+    expect(res.students[0].lastName).toBe("Quispe");
+    expect(res.students[0].firstName).toBe("Rosa");
+  });
+
+  test("splitName con dos comas: el resto se re-une conservando la coma interna", async () => {
+    const res = await serviceWith([
+      row({ full_name: "Quispe, Rosa, Belen" }),
+    ]).getAttendanceRisk(1);
+
+    expect(res.students[0].lastName).toBe("Quispe");
+    expect(res.students[0].firstName).toBe("Rosa, Belen");
+  });
 });
 
 describe("PU-I3 · computeSummary: conteos del resumen del docente (HU22)", () => {
