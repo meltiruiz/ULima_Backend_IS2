@@ -31,3 +31,4 @@ Current feature folders:
 - `course-detail`
 - `alerts`
 - `section-management`
+- `networking`
