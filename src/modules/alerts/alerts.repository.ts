@@ -5,6 +5,7 @@ export interface EnrollmentWithScore {
   enrollment_id: number;
   course_id: number;
   course_name: string;
+  section_code: string | null;
   assessment_id: number | null;
   assessment_weight: string | null;
   score_value: string | null;
@@ -18,6 +19,8 @@ export interface StoredAlert {
   message: string;
   isRead: boolean;
   createdAt: Date;
+  courseName?: string;
+  sectionCode?: string;
 }
 
 export class AlertsRepository {
@@ -31,6 +34,7 @@ export class AlertsRepository {
         e.id as enrollment_id,
         c.id as course_id,
         c.name as course_name,
+        sec.code as section_code,
         a.id as assessment_id,
         a.weight as assessment_weight,
         ss.value as score_value

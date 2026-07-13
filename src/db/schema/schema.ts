@@ -13,6 +13,7 @@ import {
   timestamp,
   unique,
   uniqueIndex,
+  uuid,
   varchar,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -264,8 +265,10 @@ export const courseOffering = pgTable("course_offering", {
   id: integer("id").generatedByDefaultAsIdentity().primaryKey(),
   academicPeriodId: integer("academic_period_id").notNull().references(() => academicPeriod.id),
   courseId: integer("course_id").notNull().references(() => course.id),
+  totalHours: decimal("total_hours", { precision: 5, scale: 2 }).notNull().default("0"),
 }, (t) => ({
   uqCourseOffering: unique("uq_course_offering").on(t.academicPeriodId, t.courseId),
+  chkCourseOfferingTotalHours: check("chk_course_offering_total_hours", sql`${t.totalHours} >= 0`),
   idxCourseOfferingPeriod: index("idx_course_offering_period").on(t.academicPeriodId),
 }));
 
@@ -449,6 +452,23 @@ export const studentScore = pgTable("student_score", {
   idxStudentScoreEnrollment: index("idx_student_score_enrollment").on(t.enrollmentId),
 }));
 
+// Notas SIMULADAS que el propio alumno ingresa en la calculadora para proyectar
+// su promedio. Separadas de `student_score` (que guarda las notas seed) para no
+// mezclar lo auto-reportado con lo "oficial". Persistidas en la BD (antes solo
+// vivían en SharedPreferences del dispositivo) para que sigan al alumno entre
+// dispositivos. Una fila por (matrícula, evaluación); `value` es obligatorio.
+export const simulatedGrades = pgTable("simulated_grades", {
+  id: integer("id").generatedByDefaultAsIdentity().primaryKey(),
+  enrollmentId: integer("enrollment_id").notNull().references(() => enrollment.id),
+  assessmentId: integer("assessment_id").notNull().references(() => assessment.id),
+  value: decimal("value", { precision: 5, scale: 2 }).notNull(),
+  updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  uqSimulatedGrade: unique("uq_simulated_grade").on(t.enrollmentId, t.assessmentId),
+  chkSimulatedGradeValue: check("chk_simulated_grade_value", sql`${t.value} BETWEEN 0 AND 20`),
+  idxSimulatedGradeEnrollment: index("idx_simulated_grade_enrollment").on(t.enrollmentId),
+}));
+
 export const announcement = pgTable("announcement", {
   id: integer("id").generatedByDefaultAsIdentity().primaryKey(),
   sectionRepresentativeId: integer("section_representative_id").notNull().references(() => sectionRepresentative.id),
@@ -481,4 +501,24 @@ export const alert = pgTable("alert", {
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
 }, (t) => ({
   idxAlertStudent: index("idx_alert_student").on(t.studentId),
+}));
+
+export const chatbotSession = pgTable("chatbot_session", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  studentId: integer("student_id").notNull().references(() => student.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 100 }).notNull().default("Nueva conversacion"),
+  createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+}, (t) => ({
+  idxChatbotSessionStudent: index("idx_chatbot_session_student").on(t.studentId),
+}));
+
+export const chatbotMessage = pgTable("chatbot_message", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  sessionId: uuid("session_id").notNull().references(() => chatbotSession.id, { onDelete: "cascade" }),
+  role: varchar("role", { length: 10 }).notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+}, (t) => ({
+  idxChatbotMessageSession: index("idx_chatbot_message_session").on(t.sessionId),
 }));

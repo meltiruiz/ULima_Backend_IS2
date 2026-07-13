@@ -204,15 +204,163 @@ Notas:
 
 ## Grades
 
-- `GET /grades/me/courses` — **IMPLEMENTADO**. Devuelve cursos + evaluaciones del sílabo con sus pesos, para la calculadora del alumno.
-- ~~`PUT /grades/me/scores`~~ — **NO IMPLEMENTADO** (ver nota de arquitectura).
-- ~~`GET /grades/me/courses/:sectionId/average`~~ — **NO IMPLEMENTADO** (ver nota de arquitectura).
+### GET /grades/me/courses
+
+Devuelve cursos + evaluaciones del sílabo con sus pesos, para la calculadora del alumno.
+
+- **Auth**: Bearer token, rol `student|delegate|subdelegate`
+- **Response** `200 OK`:
+  ```json
+  {
+    "cursos": [
+      {
+        "id": "1",
+        "nombre": "INGENIERÍA DE SOFTWARE II",
+        "ciclo": "2026-1",
+        "silaboUrl": "https://drive.google.com/...",
+        "secciones": [
+          { "idSeccion": "1", "codigoSeccion": "856" }
+        ]
+      }
+    ],
+    "syllabi": [
+      {
+        "cursoId": "1",
+        "cursoNombre": "INGENIERÍA DE SOFTWARE II",
+        "evaluaciones": [
+          {
+            "id": "1",
+            "nombre": "Examen Escrito 1",
+            "sigla": "EE1",
+            "peso": 30,
+            "tipo": "Examen"
+          }
+        ]
+      }
+    ]
+  }
+  ```
+
+### POST /grades/me/calculate
+
+Calcula el promedio ponderado de una lista de notas ingresadas por el alumno. No persiste datos.
+
+- **Auth**: Bearer token, rol `student|delegate|subdelegate`
+- **Request body**:
+  ```json
+  {
+    "notas": [
+      { "valor": 15, "peso": 30 },
+      { "valor": 12, "peso": 50 },
+      { "valor": 18, "peso": 20 }
+    ]
+  }
+  ```
+- **Response** `200 OK`:
+  ```json
+  {
+    "promedio": 14.1,
+    "sumaPesos": 100
+  }
+  ```
+- **Errors**: `400` `INVALID_REQUEST_BODY` (si `valor` no está entre 0-20 o `peso` no está entre 0-100)
+
+### POST /grades/me/notes
+
+Guarda las notas personales del alumno en `student_score`. Cada nota se asocia al `enrollment` activo del alumno en la sección. Si ya existe una nota para la misma evaluación, se actualiza (upsert).
+
+- **Auth**: Bearer token, rol `student|delegate|subdelegate`
+- **Request body**:
+  ```json
+  {
+    "cursos": [
+      {
+        "sectionId": 1,
+        "notas": [
+          { "assessmentId": 1, "valor": 15 },
+          { "assessmentId": 2, "valor": 0 }
+        ]
+      }
+    ]
+  }
+  ```
+- **Response** `200 OK`:
+  ```json
+  {
+    "message": "Notas guardadas correctamente"
+  }
+  ```
+- **Errors**: `400` `INVALID_REQUEST_BODY`, `500` error interno
+
+### GET /grades/me/notes
+
+Recupera las notas personales del alumno autenticado desde `student_score`.
+
+- **Auth**: Bearer token, rol `student|delegate|subdelegate`
+- **Response** `200 OK`:
+  ```json
+  {
+    "cursos": [
+      {
+        "sectionId": 1,
+        "notas": [
+          { "assessmentId": 1, "valor": 15 },
+          { "assessmentId": 2, "valor": 0 }
+        ]
+      }
+    ]
+  }
+  ```
+
+### Endpoints no implementados
+
+- ~~`PUT /grades/me/scores`~~ — **NO IMPLEMENTADO** (reemplazado por `POST /grades/me/notes`).
+- ~~`GET /grades/me/courses/:sectionId/average`~~ — **NO IMPLEMENTADO** (el cálculo se hace vía `POST /grades/me/calculate`).
+- ~~`POST /grades/syllabi`~~ — **NO IMPLEMENTADO** (fuera de v1; la tabla `syllabus` ya existe).
 
 Notas:
 
-- **Arquitectura real (HU06/HU07)**: el backend `grades` es **solo lectura** (`GET /grades/me/courses`). El **guardado de notas del alumno es local en el cliente** (`shared_preferences`, servicio Flutter `NotasService`) y el **cálculo del promedio ponderado ocurre en el frontend** (calculadora). Son notas personales no oficiales; por eso no se persisten en `student_score` desde la app ni se calcula el promedio en servidor. Los endpoints `PUT /grades/me/scores` y `.../average` quedaron documentados pero **nunca se implementaron**; se listan como no implementados para que el contrato refleje la realidad.
-- `student_score` existe en el esquema (notas oficiales de referencia) pero la app no lo escribe.
+- `student_score` es la tabla de persistencia de notas personales del alumno.
+- El cálculo de promedio ponderado se delega al backend vía `POST /grades/me/calculate`.
+- Ya no existe `NotasService` en el frontend: toda la lógica de almacenamiento y cálculo está en el backend.
+- **Arquitectura real (HU06/HU07)**: el backend `grades` es **solo lectura** (`GET /grades/me/courses`) y el **cálculo del promedio ponderado ocurre en el frontend** (calculadora). El **guardado de las notas del alumno** ahora se **persiste en el backend** vía `simulated-grades` (ver sección) — antes solo vivía en `shared_preferences`. El promedio se sigue calculando en el cliente.
+- `student_score` existe en el esquema (notas seed de referencia); la app no lo escribe. Las notas de la calculadora van a `simulated_grades`.
+- Los endpoints `PUT /grades/me/scores` y `.../average` quedaron documentados pero **nunca se implementaron**; se listan como no implementados para que el contrato refleje la realidad.
 - `POST /grades/syllabi` queda fuera de v1 salvo spec aprobada; la tabla `syllabus` ya existe.
+
+## Simulated Grades
+
+Notas SIMULADAS que el propio alumno ingresa en la calculadora, persistidas en la tabla `simulated_grades` (una fila por `enrollment_id` + `assessment_id`, `value` 0..20). Todas requieren JWT de alumno (`STUDENT_ROLES`); el `studentId` sale del token. El backend valida que cada `assessmentId` pertenezca a un curso donde el alumno está matriculado (deriva `enrollment` de `studentId`+`assessmentId`); si no, `404 ASSESSMENT_NOT_ENROLLED`.
+
+- `GET /simulated-grades/me` — **IMPLEMENTADO**. Lista las notas simuladas del alumno.
+  - Response: `{ "grades": [{ "assessmentId": number, "sectionId": number, "value": number }] }`
+- `PUT /simulated-grades/me` — **IMPLEMENTADO**. Upsert por lote (guarda varias notas de un curso a la vez).
+  - Body: `{ "grades": [{ "assessmentId": number, "value": number }] }` (1..200, `value` 0..20)
+  - Response: `{ "grades": [{ "assessmentId": number, "sectionId": number, "value": number }] }` (lista vigente completa)
+  - Errores: `404 ASSESSMENT_NOT_ENROLLED` si alguna evaluación no corresponde a una matrícula del alumno (no persiste parcialmente).
+- `DELETE /simulated-grades/me/:assessmentId` — **IMPLEMENTADO**. Borra la nota simulada del alumno para esa evaluación.
+  - Response: `{ "message": "Simulated grade removed" }`; `404 SIMULATED_GRADE_NOT_FOUND` si no existía; `400 INVALID_ASSESSMENT_ID` si el param no es entero positivo.
+
+## Official Grades
+
+Notas **oficiales** que el profesor/JP carga por evaluación, en `student_score`. La **nota final** = promedio ponderado (Σ nota×peso/100), calculada en el cliente. Distinto de `simulated-grades` (notas no oficiales del alumno).
+
+Docente (`requireRole("teacher")`, `teacherId` del JWT; solo secciones propias vía `section.teacher_id`/`jp_id`):
+
+- `GET /official-grades/teacher/sections` — **IMPLEMENTADO**. Secciones del período activo que dicta.
+  - Response: `{ "sections": [{ "sectionId": number, "courseName": string, "sectionCode": string, "rol": "Profesor"|"JP" }] }`
+- `GET /official-grades/teacher/sections/:sectionId/scores` — **IMPLEMENTADO**. Grilla de calificación.
+  - Response: `{ "sectionId": number, "students": [{ "enrollmentId": number, "code": string, "fullName": string }], "assessments": [{ "assessmentId": number, "code": string, "name": string, "weight": number, "weekNumber": number }], "scores": [{ "enrollmentId": number, "assessmentId": number, "value": number }] }`
+  - `403 NOT_SECTION_TEACHER` si el docente no dicta la sección.
+- `PUT /official-grades/teacher/sections/:sectionId/scores` — **IMPLEMENTADO**. Upsert por lote de notas.
+  - Body: `{ "scores": [{ "enrollmentId": number, "assessmentId": number, "value": number }] }` (`value` 0..20, 1..1000 items)
+  - Response: la grilla actualizada (mismo shape que el GET).
+  - Errores: `403 NOT_SECTION_TEACHER`; `404 ENROLLMENT_NOT_IN_SECTION` / `404 ASSESSMENT_NOT_IN_SECTION` (valida todo antes de escribir).
+
+Alumno (`requireRole(student|delegate|subdelegate)`, `studentId` del JWT):
+
+- `GET /official-grades/me` — **IMPLEMENTADO**. Notas oficiales del alumno por curso/sección (el cliente calcula la nota final).
+  - Response: `{ "courses": [{ "sectionId": number, "courseName": string, "sectionCode": string, "assessments": [{ "assessmentId": number, "code": string, "name": string, "weight": number, "value": number|null }] }] }`
 
 ## Schedule
 
@@ -380,10 +528,11 @@ Puente de auth entre el JWT propio y Firebase para el chat en vivo (Firebase RTD
 
 - `POST /chat/token` — verifica el JWT propio, deriva el rol/pertenencia del solicitante en la sección (desde `enrollment` + `section_representative`, o `section.teacher_id`/`jp_id`), escribe el espejo de membresía `/members/{sectionId}/{uid}` en RTDB (el backend es el ÚNICO que lo escribe) y firma un **custom token** de Firebase (`uid = app_user.id`). Body: `{ "sectionId": number }` (acepta string; se coacciona con `z.coerce.number()`). Response: `{ "token", "uid", "displayName", "role", "roleLabel", "isModerator", "weight" }`. `role ∈ {teacher, jp, delegate, subdelegate, student}`; `weight` = 100/90/70/60/10; `isModerator` = true salvo alumno raso.
 - Error principal: `403 CHAT_SECTION_FORBIDDEN` (no pertenece a la sección, o el `userId` del JWT no coincide con el participante).
+- `DELETE /chat/sections/:sectionId/messages/:messageId` — **(HU23) borrado suave de un mensaje**, gateado a `requireRole('teacher')`. El controller valida además que el solicitante sea el **PROFESOR TITULAR** de esa sección (participante con `role == 'teacher'`, no el JP ni representantes, y `userId` del JWT == participante). Marca el mensaje en RTDB con `{ deleted: true, deletedBy, deletedByUid, deletedByRole, deletedAt }` vía **Admin SDK** (salta las reglas RTDB) → el cliente lo muestra como lápida "eliminado por <profesor>". Response `200`: `{ deleted: true, messageId, deletedBy }`. Errores: `403 CHAT_DELETE_FORBIDDEN` (no es el profesor titular de la sección), `404 CHAT_MESSAGE_NOT_FOUND`, `400 INVALID_ROUTE_PARAMS`.
 
 Notas:
 
-- Las reglas de seguridad de RTDB (lectura/escritura/borrado por membresía) viven en Firebase y se validan con **Firebase Emulator** (fuera de la suite Bun).
+- Las reglas de seguridad de RTDB (lectura/escritura/borrado por membresía) viven en `ULima_Frontend_IS2/database.rules.json` y se validan con **Firebase Emulator** (fuera de la suite Bun). ⚠️ El `$msg .write` es **solo-crear** desde el cliente (no borra ni edita); el borrado suave lo hace el backend con Admin SDK. Tras cambiar `database.rules.json` hay que redeplegar: `firebase deploy --only database` (proyecto `ulima-plus-chat`, requiere acceso a Firebase).
 - Requiere `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, `FIREBASE_DATABASE_URL` en el entorno; si faltan, el servicio no firma tokens (chat deshabilitado). ⚠️ Fijar `firebase-admin@12.1.0` (v13/v14 rompen Vercel con `ERR_REQUIRE_ESM`).
 
 ## Networking (HU27 — carnet) — PROPUESTO, pendiente de implementar
@@ -398,3 +547,30 @@ Notas:
 
 - El carnet solo se expone si el dueño hizo opt-in; quitar el opt-in lo oculta sin borrar los enlaces.
 - Compartir en el chat de sección: el mensaje referencia `userId` y el receptor resuelve el carnet vía `GET /networking/users/:userId` (fuente de verdad = Postgres, no se duplican redes en Firebase). Solo el carnet propio y en secciones donde el usuario es miembro.
+
+## Chatbot (Asistente Académico con IA)
+
+Inteligencia artificial conversacional (Cohere) integrada como asistente académico para alumnos. Detalle en `specs/features/chatbot/chatbot.spec.md`.
+
+### Sesiones
+
+- `POST /chatbot/sessions` — crea una nueva sesión vacía para el alumno autenticado. Roles requeridos: `student`, `delegate`, `subdelegate`. Response `201`: `{ "session": { "id": "uuid", "title": "Nueva conversacion", "createdAt": "ISO-8601", "updatedAt": "ISO-8601" } }`.
+- `GET /chatbot/sessions` — lista todas las sesiones del alumno ordenadas por `updated_at` descendente. Response `200`: `{ "sessions": [ { "id", "title", "createdAt", "updatedAt" } ] }`.
+- `GET /chatbot/sessions/:id` — obtiene sesión con todos sus mensajes. Response `200`: `{ "session": { ... }, "messages": [ { "id", "role": "user"|"assistant", "content", "createdAt" } ] }`. Error: `404 SESSION_NOT_FOUND`.
+- `DELETE /chatbot/sessions/:id` — elimina sesión y sus mensajes en cascada. Response `200`: `{ "message": "Sesion eliminada correctamente." }`. Error: `404 SESSION_NOT_FOUND`.
+
+### Preguntas
+
+- `POST /chatbot/sessions/:id/ask` — envía una pregunta en lenguaje natural y recibe respuesta del chatbot. Body: `{ "question": "string<=500", "localGrades?": [{ "id": "string", "nombre": "string", "notas": [{ "titulo": "string", "peso": 0-100, "valor": 0-20 }] }] }`. Response `200`: `{ "answer": "string", "sessionId": "uuid" }`. Errores: `400 INVALID_QUESTION`, `404 SESSION_NOT_FOUND`, `429 RATE_LIMITED` (máx. 20 preguntas/hora/alumno), `503 CHATBOT_UNAVAILABLE`.
+
+### Reglas
+
+- El chatbot solo responde con datos reales del alumno contenidos en el contexto (DB + notas locales + Firebase RTDB). No inventa.
+- La clasificación de intención usa Cohere Classify con keyword fallback en español.
+- La búsqueda en chat usa Cohere Rerank sobre mensajes recientes de Firebase RTDB (sin almacenar embeddings).
+- Ventana de contexto limitada a últimos 10 mensajes del historial de la sesión.
+- Prompt injection bloqueada (400 si contiene `<context>`, `[CONTEXTO]`, `system:`, `assistant:`).
+- Título automático de sesión se genera con Cohere en la primera pregunta.
+- Rate limit: 20 preguntas/hora/alumno (configurable via `CHATBOT_RATE_LIMIT`).
+- Timeout Cohere Chat: 8 segundos. Errores Cohere retornan 503 con mensaje genérico.
+- Requiere `COHERE_API_KEY` en variables de entorno.
