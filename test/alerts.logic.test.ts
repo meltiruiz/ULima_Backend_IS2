@@ -29,7 +29,7 @@ describe("aggregateCourseScores", () => {
     const out = aggregateCourseScores([
       row({ course_id: 1, assessment_id: 1, assessment_weight: 30, score_value: 12 }),
       row({ course_id: 1, assessment_id: 2, assessment_weight: 20, score_value: 8 }),
-      row({ course_id: 2, name: "Otro", course_name: "Otro", assessment_id: 3, assessment_weight: 40, score_value: 14 }),
+      row({ course_id: 2, course_name: "Otro", assessment_id: 3, assessment_weight: 40, score_value: 14 }),
     ]);
     const c1 = out.find((g) => g.courseId === 1)!;
     expect(c1.gradedWeight).toBe(50);

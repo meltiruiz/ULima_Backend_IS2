@@ -231,7 +231,7 @@ describe("StudentController — RSVP solo alumnos", () => {
 
   test("token alumno → confirma", async () => {
     const c = fakeCtx({ sessionId: "5" }, { studentId: 6 });
-    const res = (await controller.confirmRsvp(c)) as { id: string; myRsvp: boolean };
+    const res = (await controller.confirmRsvp(c)) as unknown as { id: string; myRsvp: boolean };
     expect(res.id).toBe("5");
     expect(res.myRsvp).toBe(true);
   });

@@ -41,9 +41,11 @@ const makePrerequisite = (over: Partial<Record<string, unknown>> = {}) => ({
 // Mock base del repositorio (todos los métodos retornan valores neutrales)
 const makeRepo = () => ({
   findStudentCurriculumId:  mock(async () => 10),
-  findCurriculumCourses:    mock(async () => []),
-  findCoursePrerequisites:  mock(async () => []),
-  findStudentSimulation:    mock(async () => []),
+  // Anotamos el tipo de retorno para que el [] vacío no se infiera como never[]
+  // (si no, los mockImplementation con filas reales no serían asignables).
+  findCurriculumCourses:    mock(async (): Promise<ReturnType<typeof makeCourse>[]> => []),
+  findCoursePrerequisites:  mock(async (): Promise<ReturnType<typeof makePrerequisite>[]> => []),
+  findStudentSimulation:    mock(async (): Promise<{ curriculumCourseId: number; status: string }[]> => []),
   courseExistsInCurriculum: mock(async () => true),
   upsertSimulation:         mock(async () => undefined),
   deleteSimulation:         mock(async () => undefined),
