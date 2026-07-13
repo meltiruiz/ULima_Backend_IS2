@@ -49,7 +49,13 @@ class CohereClient {
       maxTokens?: number;
     },
   ): Promise<string> {
-    const res = await fetch(`${COHERE_BASE}/v1/chat`, {
+    // API v2 (/v2/chat): array `messages`; el rol `system` reemplaza al `preamble`.
+    const v2Messages: Array<{ role: string; content: string }> = [
+      ...(options?.preamble ? [{ role: "system", content: options.preamble }] : []),
+      { role: "user", content: message },
+    ];
+
+    const res = await fetch(`${COHERE_BASE}/v2/chat`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${this.apiKey}`,
@@ -57,8 +63,7 @@ class CohereClient {
       },
       body: JSON.stringify({
         model,
-        message,
-        preamble: options?.preamble,
+        messages: v2Messages,
         temperature: options?.temperature ?? 0.3,
         max_tokens: options?.maxTokens ?? 1000,
       }),
@@ -70,7 +75,7 @@ class CohereClient {
     }
 
     const json = await res.json() as CohereChatResponse;
-    return json.text ?? json.message?.content?.[0]?.text ?? "";
+    return json.message?.content?.[0]?.text ?? json.text ?? "";
   }
 
   public async chatWithHistory(
@@ -82,15 +87,18 @@ class CohereClient {
       signal?: AbortSignal;
     },
   ): Promise<string> {
-    const last = messages[messages.length - 1];
-    if (!last) return "";
+    if (messages.length === 0) return "";
 
-    const chatHistory = messages.slice(0, -1).map((m) => ({
-      role: m.role === "assistant" ? "CHATBOT" : "USER",
-      message: m.content,
-    }));
+    // API v2 (/v2/chat): un único array `messages` con roles system/user/assistant.
+    // El rol `system` reemplaza al viejo `preamble` de v1. command-a-03-2025 se
+    // sirve en v2 (el /v1/chat con este modelo dejó de funcionar). El historial
+    // ya viene con roles user/assistant válidos para v2.
+    const v2Messages: Array<{ role: string; content: string }> = [
+      ...(options?.preamble ? [{ role: "system", content: options.preamble }] : []),
+      ...messages.map((m) => ({ role: m.role, content: m.content })),
+    ];
 
-    const res = await fetch(`${COHERE_BASE}/v1/chat`, {
+    const res = await fetch(`${COHERE_BASE}/v2/chat`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${this.apiKey}`,
@@ -99,9 +107,7 @@ class CohereClient {
       signal: options?.signal,
       body: JSON.stringify({
         model: "command-a-03-2025",
-        message: last.content,
-        chat_history: chatHistory,
-        preamble: options?.preamble,
+        messages: v2Messages,
         temperature: options?.temperature ?? 0.3,
         max_tokens: options?.maxTokens ?? 1000,
       }),
@@ -113,7 +119,7 @@ class CohereClient {
     }
 
     const json = await res.json() as CohereChatResponse;
-    return json.text ?? json.message?.content?.[0]?.text ?? "";
+    return json.message?.content?.[0]?.text ?? json.text ?? "";
   }
 
   public async classify(
@@ -186,7 +192,7 @@ class CohereClient {
   public async generateTitle(question: string): Promise<string> {
     const prompt = `Genera un titulo breve (maximo 100 caracteres) en espanol para una conversacion de chatbot academico que empieza con esta pregunta: "${question}". Responde solo con el titulo, sin comillas ni explicaciones.`;
 
-    const res = await fetch(`${COHERE_BASE}/v1/chat`, {
+    const res = await fetch(`${COHERE_BASE}/v2/chat`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${this.apiKey}`,
@@ -194,7 +200,7 @@ class CohereClient {
       },
       body: JSON.stringify({
         model: "command-a-03-2025",
-        message: prompt,
+        messages: [{ role: "user", content: prompt }],
         temperature: 0.7,
         max_tokens: 50,
       }),
@@ -205,7 +211,7 @@ class CohereClient {
     }
 
     const json = await res.json() as CohereChatResponse;
-    const title = (json.text ?? json.message?.content?.[0]?.text ?? "Nueva conversacion").trim();
+    const title = (json.message?.content?.[0]?.text ?? json.text ?? "Nueva conversacion").trim();
     return title.length > 100 ? title.substring(0, 97) + "..." : title;
   }
 }
