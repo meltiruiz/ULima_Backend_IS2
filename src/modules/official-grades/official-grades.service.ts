@@ -27,10 +27,12 @@ export class OfficialGradesService {
     }));
   }
 
+  // Solo el PROFESOR TITULAR califica: leer la grilla y guardar notas oficiales
+  // exige ser teacher_id de la sección. El JP (jp_id) recibe 403 (no sube notas).
   private async assertOwnership(teacherId: number, sectionId: number) {
-    const owns = await this.repository.teacherOwnsSection(teacherId, sectionId);
-    if (!owns) {
-      throw new HttpError(403, "No dictas esta sección.", "NOT_SECTION_TEACHER");
+    const isProfesor = await this.repository.teacherIsSectionProfesor(teacherId, sectionId);
+    if (!isProfesor) {
+      throw new HttpError(403, "Solo el profesor titular puede calificar esta sección.", "NOT_SECTION_PROFESSOR");
     }
   }
 

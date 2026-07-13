@@ -20,6 +20,12 @@ export const createSectionManagementRoutes = (controller: SectionManagementContr
     requireRole("delegate", "subdelegate"),
     (c) => controller.getAnnouncements(c),
   );
+  // HU11: estadísticas del salón (solo el delegado/subdelegado de la sección).
+  app.get(
+    "/sections/:sectionId/statistics",
+    requireRole("delegate", "subdelegate"),
+    (c) => controller.getStatistics(c),
+  );
   app.post(
     "/sections/:sectionId/announcements",
     requireRole("delegate", "subdelegate"),

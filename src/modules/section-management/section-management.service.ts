@@ -5,6 +5,7 @@ import type {
   UpdateAnnouncementBody,
 } from "./section-management.schemas.js";
 import type { SectionManagementRepository } from "./section-management.repository.js";
+import { computeSectionStatistics, type SectionStatistics } from "./section-statistics.logic.js";
 import type {
   AnnouncementResponse,
   AnnouncementRow,
@@ -86,6 +87,19 @@ export class SectionManagementService {
       return { anuncios: rows.map((row) => this.mapAnnouncement(row)) };
     } catch (e) {
       throw this.wrap(e, "getAnnouncements");
+    }
+  }
+
+  // HU11: estadísticas REALES del salón (promedio, % aprobados, histograma)
+  // calculadas desde las notas oficiales. Solo el delegado/subdelegado de la
+  // sección puede verlas.
+  async getStatistics(studentId: number, sectionId: number): Promise<SectionStatistics> {
+    try {
+      await this.requireRepresentative(studentId, sectionId);
+      const rows = await this.repository.findSectionScoresForStats(sectionId);
+      return computeSectionStatistics(rows);
+    } catch (e) {
+      throw this.wrap(e, "getStatistics");
     }
   }
 
