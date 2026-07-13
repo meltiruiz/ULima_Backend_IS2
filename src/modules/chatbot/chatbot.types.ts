@@ -30,21 +30,15 @@ export interface ChatbotMessageRow {
   createdAt: Date;
 }
 
+export type { AssessmentResponse } from "../schedule/schedule.types.js";
+export type { AssessmentsResult } from "../schedule/schedule.types.js";
+
 export interface ScheduleData {
   dayName: string;
   startTime: string;
   endTime: string;
   courseName: string;
   sectionCode: string;
-  classroom: string;
-}
-
-export interface AssessmentData {
-  courseName: string;
-  sectionCode: string;
-  name: string;
-  date: string;
-  startTime: string;
   classroom: string;
 }
 

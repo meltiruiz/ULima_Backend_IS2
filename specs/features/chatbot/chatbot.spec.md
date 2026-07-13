@@ -53,41 +53,44 @@ Chatbot con IA (Cohere) embebido en la app. El alumno hace preguntas en lenguaje
   - `alerts`: riesgo, alerta, carga, evaluaciones (cantidad), semana (carga)
   - `announcements`: anuncio, comunicado, aviso, publico
   - `classmates`: companero, companeros, seccion, quienes, alumnos
-  - `chat`: chat, dijo, dijeron, hablo, comentaron, mensaje, conversacion
+  - `chat`: chat, dijo, dijeron, dicho, dicen, hablo, hablaron, comentaron, comenta, comentan, comentario, comentarios, mensaje, mensajes, conversacion, grupo, grupos, alguien, escribio, escribieron
 - Se toman los top-N intents con score > 0.3 (Cohere Classify) o todos los dominios con al menos 1 keyword match (fallback).
 
 ### BR-CB-05: Recoleccion de datos por intencion
 
-Solo se consultan las fuentes necesarias segun los intents clasificados. Todas las queries se ejecutan en paralelo via `Promise.all`:
+Se consultan las fuentes relevantes segun los intents clasificados. **Excepcion: el chat SIEMPRE se consulta** (ver BR-CB-06), independientemente del intent detectado, porque el usuario puede preguntar cualquier cosa (reglas del examen, fechas, materiales) y la respuesta puede estar en el chat del curso sin que el usuario lo exprese explicitamente. Las queries se ejecutan en paralelo via `Promise.all`:
 
 | Intent | Fuente | Query |
 | --- | --- | --- |
 | `grades` | Body del request | `localGrades` enviadas por el frontend |
-| `schedule` | PostgreSQL | `schedule_session` + `academic_week` del periodo activo para las secciones matriculadas |
+| `schedule` | Modulo `schedule` (reutilizado) | `ScheduleService.getAssessments(studentId)` + `ScheduleRepository.findAcademicWeeksForActivePeriod()`. El chatbot **no** reimplementa la query; delega en el modulo schedule (ya aprobado). El filtro por rango de semanas se aplica en el chatbot (BR-CB-14). |
 | `curriculum` | PostgreSQL | `student_course_progress` + `curriculum_course` + `course` + `enrollment` activo |
 | `alerts` | PostgreSQL | `alert` del alumno en el periodo activo |
 | `announcements` | PostgreSQL | `announcement` de las secciones donde el alumno esta matriculado |
 | `classmates` | PostgreSQL | `enrollment` + `app_user` de las secciones del alumno (solo nombres, no datos sensibles) |
-| `chat` | Firebase RTDB + Cohere Rerank | Mensajes recientes de `sections/{sectionId}/messages` filtrados por relevancia semantica |
+| `chat` (siempre) | Firebase RTDB | Mensajes recientes de `sections/{sectionId}/messages` (ver BR-CB-06). Se ejecuta **siempre**, no se gatea por intent. |
 
-### BR-CB-06: Busqueda semantica en chat
+### BR-CB-06: Lectura del chat de la seccion
 
-- Si el intent incluye `chat`, se obtienen los `sectionId` de las secciones activas del alumno.
-- Para cada seccion relevante (filtrada por nombre de curso si se menciona en la pregunta), se leen los ultimos 200 mensajes desde Firebase RTDB.
-- Se llama a Cohere Rerank (`/rerank`) con la pregunta como `query` y los mensajes como `documents`. Se toman los top-10 mensajes mas relevantes.
-- Los mensajes relevantes se incluyen en el contexto con formato: `[Fecha] Nombre: mensaje`.
-- Si Firebase RTDB no esta disponible, el intent `chat` se omite silenciosamente (no se bloquea la respuesta para otros intents).
+- **El chat se consulta SIEMPRE**, independientemente del intent detectado. La intencion es que el LLM tenga acceso a los mensajes del curso para responder preguntas cuyas respuestas estan en el chat (ej. "se pueden usar apuntes?" -> el profe respondio en el chat), aunque el usuario no lo pida explicitamente.
+- Se obtienen los `sectionId` de las secciones activas del alumno.
+- **Filtro de secciones:** `filterSections(question, sections)` retorna las secciones cuyo nombre de curso (en minusculas, sin acentos) **o** codigo de seccion aparece como substring en la pregunta. Ademas, hace **match por tokens significativos** (palabras del nombre del curso con longitud > 3, ignorando articulos/preposiciones y numeros romanos como `II`, `III`): si cualquiera de esos tokens esta en la pregunta, la seccion matchea. Esto permite que "software" matchee con "INGENIERIA DE SOFTWARE II" aunque la frase completa no este. Si ninguna seccion matchea, se toman las primeras 3 secciones (alfabeticas) como fallback.
+- Para cada seccion relevante, se leen los **ultimos 200 mensajes** desde Firebase RTDB (`getRecentMessages(sectionId, 200)`).
+- **No se usa Cohere Rerank** para el chat: se envian todos los mensajes leidos al LLM en el contexto. El LLM tiene capacidad nativa de leer JSON y razonar sobre los mensajes, asi que entiende tanto preguntas especificas ("que se dijo del examen?") como preguntas meta ("dijeron algo por el grupo?"). Esto evita dependencia adicional de Cohere Rerank, reduce latencia y costo, y elimina el riesgo de perder mensajes relevantes por scores bajos.
+- Los mensajes se incluyen en el contexto bajo el titulo `MENSAJES DEL CHAT DE LA SECCION`, en formato JSON con `senderName`, `body` y `createdAt`. El LLM debe responder en lenguaje natural (no IDs tecnicos), citando remitentes por nombre.
+- Si una seccion no tiene mensajes, se omite. Si Firebase RTDB no esta disponible para una seccion, se hace `console.warn` y se continua con la siguiente seccion (no se bloquea la respuesta para otros intents).
 
 ### BR-CB-07: Ventana de contexto
 
 - El contexto enviado a Cohere Chat incluye:
   1. System prompt (reglas de comportamiento, solo datos del contexto, no inventar).
   2. Perfil del alumno (nombre, carrera, ciclo -- derivado del JWT + DB, no del prompt).
-  3. Ultimos 10 mensajes del historial de la sesion (user + assistant).
-  4. Datos academicos recolectados segun intents (solo los bloques relevantes).
-  5. Notas locales (`localGrades`) si el intent incluye `grades`.
-  6. Mensajes de chat relevantes si el intent incluye `chat`.
-  7. La pregunta actual del alumno.
+  3. **Fecha y semana actual** (ver BR-CB-13): `today` (ISO `YYYY-MM-DD`), `academicPeriodCode`, `currentWeekNumber`+rango, `nextWeekNumber`+rango. Permite al LLM razonar sobre "hoy", "mañana", "la semana que viene" sin inventar.
+  4. Ultimos 10 mensajes del historial de la sesion (user + assistant).
+  5. Datos academicos recolectados segun intents (solo los bloques relevantes).
+  6. Notas locales (`localGrades`) si el intent incluye `grades`.
+  7. Mensajes de chat relevantes si el intent incluye `chat`.
+  8. La pregunta actual del alumno.
 - Si el historial tiene mas de 10 mensajes, solo se incluyen los ultimos 10 (los mas antiguos se descartan del contexto, pero permanecen en BD).
 
 ### BR-CB-08: Notas locales
@@ -166,6 +169,29 @@ REGLAS:
 | Rate limit propio | 429 | "Demasiadas preguntas. Intenta de nuevo en X minutos." |
 
 - Nunca se exponen detalles del error de Cohere al frontend. Se loguea internamente con `console.error`.
+
+### BR-CB-13: Fecha y zona horaria del contexto
+
+- El backend expone un helper `todayISO()` en `src/shared/clock.ts` que devuelve la fecha actual en formato `YYYY-MM-DD` forzando `timeZone: "America/Lima"` via `Intl.DateTimeFormat`. Esto independiza al chatbot de la zona horaria del servidor.
+- En cada llamada a `POST /chatbot/sessions/:id/ask`, el service calcula:
+  - `today`: la fecha de hoy en Lima.
+  - `currentWeekNumber`: la `academic_week` cuyo `[start_date, end_date]` contiene `today`. Si no hay match exacto, se toma la `academic_week` con `start_date <= today` de mayor `start_date` (semana más reciente empezada). Si tampoco hay (periodo aún no inicia), se toma la primera semana del periodo activo.
+  - `nextWeekNumber = currentWeekNumber + 1` (si existe en `academic_week`; si no, se omite).
+  - `academicPeriodCode`: del periodo activo.
+- Si no existe periodo activo o no hay `academic_week` cargadas, el contexto incluye solo `today`. El LLM puede entonces razonar con la fecha del servidor aunque falten las semanas.
+- El `dateContext` es **obligatorio** en la firma de `buildContext` (no opcional): `buildContext` no tiene que defenderse de un null, el service garantiza que siempre hay al menos `today`.
+
+### BR-CB-14: Rango de evaluaciones pasado al LLM
+
+- El chatbot reutiliza `ScheduleService.getAssessments(studentId)` (módulo `schedule`) en vez de reimplementar la query.
+- Si `currentWeekNumber` está disponible (BR-CB-13), el chatbot filtra las evaluaciones a `[currentWeekNumber - 1, currentWeekNumber + 1]` (3 semanas). Esto evita saturar el contexto con las 16 semanas del ciclo.
+- Si `currentWeekNumber` no está disponible, el chatbot **no filtra** y pasa todas las evaluaciones del periodo al LLM. El LLM puede entonces responder con la fecha completa.
+- Este filtro se aplica **solo en el chatbot**. El endpoint `GET /schedule/me/assessments` sigue devolviendo el ciclo completo (no se modifica su contrato).
+
+### BR-CB-15: Tipo de evaluación compartido
+
+- `chatbot.types.ts` **no** declara su propio `AssessmentData`. Reexporta `AssessmentResponse` desde `schedule.types.ts` (que ya incluye `weekNumber`, `date`, `startTime`, `endTime`, `classroom`, `color` calculados correctamente por `ScheduleService`).
+- La fecha, hora y aula del examen en el contexto del LLM vienen siempre de `ScheduleService`, no de una query propia. Esto evita inconsistencias entre lo que ve el alumno en la app y lo que le responde el chatbot.
 
 ## Endpoints
 
@@ -329,8 +355,9 @@ CHATBOT_RATE_LIMIT=20   # Preguntas por alumno por hora (opcional, default 20)
 
 ## Test Links
 
-- Clasificacion de intencion (keyword fallback): `[@test] ../../../test/chatbot/intent-classifier.test.ts`
-- Construccion de contexto: `[@test] ../../../test/chatbot/context-builder.test.ts`
+- Clasificacion de intencion (keyword fallback): `[@test] ../../../test/chatbot.intent-classifier.test.ts`
+- Construccion de contexto: `[@test] ../../../test/chatbot.context-builder.test.ts`
+- Busqueda en chat (filterSections + token match): `[@test] ../../../test/chatbot.chat-search.test.ts`
 - Queries de repositorio: `[@test] ../../../test/chatbot/chatbot.repository.test.ts`
 - Orquestacion del servicio: `[@test] ../../../test/chatbot/chatbot.service.test.ts`
 - Validacion Zod y controller: `[@test] ../../../test/chatbot/chatbot.controller.test.ts`

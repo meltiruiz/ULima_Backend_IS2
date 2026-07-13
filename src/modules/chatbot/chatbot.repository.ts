@@ -4,7 +4,6 @@ import type {
   ChatbotSessionRow,
   ChatbotMessageRow,
   ScheduleData,
-  AssessmentData,
   CurriculumData,
   AlertData,
   AnnouncementData,
@@ -190,37 +189,6 @@ export class ChatbotRepository {
     return rows;
   }
 
-  async getAssessments(studentId: number): Promise<AssessmentData[]> {
-    const rows = await this.database.execute(sql`
-      SELECT
-        c.name as course_name,
-        s.code as section_code,
-        a.name,
-        aw.start_date::text as date,
-        ss.start_time::text as start_time,
-        ss.classroom
-      FROM assessment a
-      JOIN syllabus sy ON sy.id = a.syllabus_id
-      JOIN course_offering co ON co.id = sy.course_offering_id
-      JOIN course c ON c.id = co.course_id
-      JOIN section s ON s.course_offering_id = co.id
-      JOIN schedule_session ss ON ss.section_id = s.id
-      JOIN enrollment e ON e.section_id = s.id
-      JOIN student st ON st.id = e.student_id
-      JOIN academic_period ap ON ap.id = co.academic_period_id
-      JOIN academic_week aw ON aw.academic_period_id = ap.id AND aw.week_number = a.week_number
-      WHERE st.id = ${studentId}
-        AND e.status = 'active'
-        AND ap.is_active = true
-        AND ss.day_of_week = (
-          SELECT EXTRACT(DOW FROM aw.start_date::date)::int
-          LIMIT 1
-        )
-      ORDER BY aw.start_date, ss.start_time
-    `) as unknown as AssessmentData[];
-    return rows;
-  }
-
   async getCurriculum(studentId: number): Promise<CurriculumData[]> {
     const rows = await this.database.execute(sql`
       SELECT
@@ -347,5 +315,31 @@ export class ChatbotRepository {
       careerName: r.career_name,
       currentLevel: r.current_level,
     };
+  }
+
+  async getActiveAcademicPeriod(): Promise<{ id: number; code: string } | null> {
+    const rows = await this.database.execute(sql`
+      SELECT id, code
+      FROM academic_period
+      WHERE is_active = true
+      LIMIT 1
+    `) as unknown as { id: number; code: string }[];
+    if (rows.length === 0) return null;
+    return { id: rows[0].id, code: rows[0].code };
+  }
+
+  async getAcademicWeeksForActivePeriod(): Promise<Array<{ weekNumber: number; startDate: string; endDate: string }>> {
+    const rows = await this.database.execute(sql`
+      SELECT aw.week_number, aw.start_date::text as start_date, aw.end_date::text as end_date
+      FROM academic_week aw
+      JOIN academic_period ap ON ap.id = aw.academic_period_id
+      WHERE ap.is_active = true
+      ORDER BY aw.week_number
+    `) as unknown as { week_number: number; start_date: string; end_date: string }[];
+    return rows.map((r) => ({
+      weekNumber: r.week_number,
+      startDate: r.start_date,
+      endDate: r.end_date,
+    }));
   }
 }

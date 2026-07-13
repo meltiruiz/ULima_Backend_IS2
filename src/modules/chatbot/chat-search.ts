@@ -1,5 +1,4 @@
 import { firebaseService } from "../../services/firebase.service.js";
-import { cohereClient } from "../../services/cohere.client.js";
 
 export interface ChatSearchResult {
   sectionName: string;
@@ -24,24 +23,14 @@ export async function searchChatMessages(
 
       if (messages.length === 0) continue;
 
-      const bodies = messages.map((m) => m.body);
-      const rerankResults = await cohereClient.rerank(question, bodies, 10);
-
-      const relevantMessages = rerankResults
-        .filter((r) => r.score > 0.3)
-        .sort((a, b) => a.index - b.index)
-        .map((r) => messages[r.index]);
-
-      if (relevantMessages.length > 0) {
-        results.push({
-          sectionName: `${section.courseName} (${section.sectionCode})`,
-          messages: relevantMessages.map((m) => ({
-            senderName: m.senderName,
-            body: m.body,
-            createdAt: m.createdAt,
-          })),
-        });
-      }
+      results.push({
+        sectionName: `${section.courseName} (${section.sectionCode})`,
+        messages: messages.map((m) => ({
+          senderName: m.senderName,
+          body: m.body,
+          createdAt: m.createdAt,
+        })),
+      });
     } catch (error) {
       console.warn(`Failed to search chat for section ${section.sectionId}:`, error);
     }
@@ -50,13 +39,19 @@ export async function searchChatMessages(
   return results;
 }
 
-function filterSections(
+export function filterSections(
   question: string,
   sections: Array<{ sectionId: number; courseName: string; sectionCode: string }>,
-) {
+): Array<{ sectionId: number; courseName: string; sectionCode: string }> {
   const lower = question.toLowerCase();
-  const mentioned = sections.filter(
-    (s) => lower.includes(s.courseName.toLowerCase()) || lower.includes(s.sectionCode.toLowerCase()),
-  );
+  const mentioned = sections.filter((s) => {
+    if (lower.includes(s.sectionCode.toLowerCase())) return true;
+    if (lower.includes(s.courseName.toLowerCase())) return true;
+    const tokens = s.courseName
+      .toLowerCase()
+      .split(/[^a-záéíóúñü0-9]+/)
+      .filter((t) => t.length > 3 && !/^(ii|iii|iv|vi|vii|viii|ix|x)$/i.test(t));
+    return tokens.some((t) => lower.includes(t));
+  });
   return mentioned.length > 0 ? mentioned : sections.slice(0, 3);
 }

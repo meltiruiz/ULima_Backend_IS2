@@ -30,12 +30,22 @@ REGLAS:
 
 8. Usa bullet points o formato breve cuando listes informacion.`;
 
+export interface DateContext {
+  today: string;
+  currentWeekNumber?: number;
+  currentWeekRange?: string;
+  nextWeekNumber?: number;
+  nextWeekRange?: string;
+  academicPeriodCode?: string;
+}
+
 export function buildContext(params: {
   studentName: string;
   careerName: string;
   currentLevel: number | null;
   history: ChatbotMessageRow[];
   intents: ChatbotIntent[];
+  dateContext: DateContext;
   scheduleData?: unknown;
   curriculumData?: unknown;
   alertsData?: unknown;
@@ -52,6 +62,18 @@ export function buildContext(params: {
   blocks.push(`- Carrera: ${params.careerName}`);
   if (params.currentLevel != null) {
     blocks.push(`- Ciclo actual: ${params.currentLevel}`);
+  }
+
+  blocks.push(`\nFECHA Y SEMANA ACTUAL:`);
+  if (params.dateContext.academicPeriodCode) {
+    blocks.push(`- Periodo academico: ${params.dateContext.academicPeriodCode}`);
+  }
+  blocks.push(`- Hoy: ${params.dateContext.today}`);
+  if (params.dateContext.currentWeekNumber != null && params.dateContext.currentWeekRange) {
+    blocks.push(`- Semana actual: ${params.dateContext.currentWeekNumber} (${params.dateContext.currentWeekRange})`);
+  }
+  if (params.dateContext.nextWeekNumber != null && params.dateContext.nextWeekRange) {
+    blocks.push(`- Semana siguiente: ${params.dateContext.nextWeekNumber} (${params.dateContext.nextWeekRange})`);
   }
 
   if (params.history.length > 0) {
@@ -93,8 +115,8 @@ export function buildContext(params: {
     blocks.push(JSON.stringify(params.localGrades, null, 2));
   }
 
-  if (params.intents.includes("chat") && params.chatSearchResults) {
-    blocks.push(`\nRESULTADOS DE BUSQUEDA EN CHATS DE SECCION:`);
+  if (params.chatSearchResults) {
+    blocks.push(`\nMENSAJES DEL CHAT DE LA SECCION:`);
     blocks.push(JSON.stringify(params.chatSearchResults, null, 2));
   }
 

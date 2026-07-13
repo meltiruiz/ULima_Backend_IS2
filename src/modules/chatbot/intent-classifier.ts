@@ -7,7 +7,15 @@ const KEYWORD_MAP: Record<ChatbotIntent, string[]> = {
   alerts: ["riesgo", "alerta", "carga", "evaluaciones"],
   announcements: ["anuncio", "comunicado", "aviso", "publico", "anuncios", "publicaron"],
   classmates: ["companero", "companeros", "seccion", "quienes", "alumnos", "compañero", "compañeros"],
-  chat: ["chat", "dijo", "dijeron", "hablo", "comentaron", "mensaje", "conversacion", "habló", "dijerón", "comentó"],
+  chat: [
+    "chat", "grupo", "grupos",
+    "dijo", "dijeron", "dicho", "dicen",
+    "hablo", "hablaron", "habló",
+    "comento", "comentó", "comentan", "comentaron", "comentario", "comentarios",
+    "escribio", "escribió", "escribieron",
+    "mensaje", "mensajes", "conversacion",
+    "alguien",
+  ],
 };
 
 export function classifyByKeywords(question: string): ChatbotIntent[] {
@@ -54,6 +62,9 @@ export function classifyWithCohere(
     { text: "Alguien dijo algo sobre el examen en el chat", label: "chat" },
     { text: "Que se hablo en el chat ayer", label: "chat" },
     { text: "Que comentaron sobre la tarea", label: "chat" },
+    { text: "Han dicho algo del examen en el grupo de software", label: "chat" },
+    { text: "Que escribieron en el grupo sobre la exposicion", label: "chat" },
+    { text: "Algun comentario en el grupo de la clase", label: "chat" },
   ];
 
   return cohere.classify([question], examples).then((results) => {

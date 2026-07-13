@@ -1,16 +1,20 @@
 import { cohereClient } from "../../services/cohere.client.js";
+import { todayISO } from "../../shared/clock.js";
+import type { ScheduleService } from "../schedule/index.js";
 import { ChatbotRepository } from "./chatbot.repository.js";
 import { classifyByKeywords, classifyWithCohere } from "./intent-classifier.js";
-import { buildContext } from "./context-builder.js";
+import { buildContext, type DateContext } from "./context-builder.js";
 import { searchChatMessages } from "./chat-search.js";
 import type { ChatbotIntent, ChatbotMessageRow, ChatbotSessionRow } from "./chatbot.types.js";
 import type { AskInput } from "./chatbot.schemas.js";
 
 const CLASSIFY_TIMEOUT_MS = 500;
+const WEEK_RANGE_RADIUS = 1;
 
 export class ChatbotService {
   constructor(
     private readonly repository: ChatbotRepository,
+    private readonly scheduleService: ScheduleService,
   ) {}
 
   async createSession(studentId: number): Promise<ChatbotSessionRow> {
@@ -45,6 +49,8 @@ export class ChatbotService {
     const history = await this.repository.getMessages(sessionId);
     const studentInfo = await this.repository.getStudentInfo(studentId);
 
+    const dateContext = await this.computeDateContext();
+
     const [
       scheduleData,
       curriculumData,
@@ -53,12 +59,12 @@ export class ChatbotService {
       classmatesData,
       chatSearchResults,
     ] = await Promise.all([
-      intents.includes("schedule") ? this.getScheduleData(studentId) : Promise.resolve(null),
+      intents.includes("schedule") ? this.getScheduleData(studentId, dateContext) : Promise.resolve(null),
       intents.includes("curriculum") ? this.getCurriculumData(studentId) : Promise.resolve(null),
       intents.includes("alerts") ? this.getAlertsData(studentId) : Promise.resolve(null),
       intents.includes("announcements") ? this.getAnnouncementsData(studentId) : Promise.resolve(null),
       intents.includes("classmates") ? this.getClassmatesData(studentId) : Promise.resolve(null),
-      intents.includes("chat") ? this.getChatResults(studentId, input.question) : Promise.resolve(null),
+      this.getChatResults(studentId, input.question),
     ]);
 
     const { preamble, message: contextMessage } = buildContext({
@@ -67,6 +73,7 @@ export class ChatbotService {
       currentLevel: studentInfo?.currentLevel ?? null,
       history,
       intents,
+      dateContext,
       scheduleData,
       curriculumData,
       alertsData,
@@ -134,11 +141,22 @@ export class ChatbotService {
     }
   }
 
-  private async getScheduleData(studentId: number) {
-    const [sessions, assessments] = await Promise.all([
+  private async getScheduleData(studentId: number, dateContext: DateContext) {
+    const [sessions, allAssessments] = await Promise.all([
       this.repository.getSchedule(studentId),
-      this.repository.getAssessments(studentId),
+      this.scheduleService.getAssessments(studentId),
     ]);
+
+    const currentWeek = dateContext.currentWeekNumber;
+    const fromWeek = currentWeek != null ? currentWeek - WEEK_RANGE_RADIUS : null;
+    const toWeek = currentWeek != null ? currentWeek + WEEK_RANGE_RADIUS : null;
+
+    const assessments = fromWeek != null && toWeek != null
+      ? allAssessments.assessments.filter(
+          (a) => a.weekNumber >= fromWeek && a.weekNumber <= toWeek,
+        )
+      : allAssessments.assessments;
+
     return { sessions, assessments };
   }
 
@@ -164,4 +182,50 @@ export class ChatbotService {
     const results = await searchChatMessages(question, sectionDetails);
     return results.length > 0 ? results : null;
   }
+
+  private async computeDateContext(): Promise<DateContext> {
+    const today = todayISO();
+    const [activePeriod, weeks] = await Promise.all([
+      this.repository.getActiveAcademicPeriod(),
+      this.repository.getAcademicWeeksForActivePeriod(),
+    ]);
+
+    const dateContext: DateContext = { today };
+
+    if (activePeriod) {
+      dateContext.academicPeriodCode = activePeriod.code;
+    }
+
+    if (weeks.length === 0) {
+      return dateContext;
+    }
+
+    const currentWeek = pickCurrentWeek(weeks, today);
+    if (currentWeek) {
+      dateContext.currentWeekNumber = currentWeek.weekNumber;
+      dateContext.currentWeekRange = `${currentWeek.startDate} → ${currentWeek.endDate}`;
+
+      const nextWeek = weeks.find((w) => w.weekNumber === currentWeek.weekNumber + 1);
+      if (nextWeek) {
+        dateContext.nextWeekNumber = nextWeek.weekNumber;
+        dateContext.nextWeekRange = `${nextWeek.startDate} → ${nextWeek.endDate}`;
+      }
+    }
+
+    return dateContext;
+  }
 }
+
+type AcademicWeekRow = { weekNumber: number; startDate: string; endDate: string };
+
+const pickCurrentWeek = (weeks: AcademicWeekRow[], today: string): AcademicWeekRow | null => {
+  const exact = weeks.find((w) => w.startDate <= today && today <= w.endDate);
+  if (exact) return exact;
+
+  const past = weeks
+    .filter((w) => w.startDate <= today)
+    .sort((a, b) => b.startDate.localeCompare(a.startDate))[0];
+  if (past) return past;
+
+  return weeks.slice().sort((a, b) => a.startDate.localeCompare(b.startDate))[0] ?? null;
+};
