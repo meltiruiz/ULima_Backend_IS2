@@ -193,4 +193,23 @@ export class SectionManagementRepository {
         and is_active = true
     `);
   }
+
+  // HU11: notas oficiales por (matrícula activa, evaluación) de la sección, para
+  // calcular las estadísticas del salón. `value` es null si la evaluación aún no
+  // fue calificada (la lógica pura la ignora).
+  async findSectionScoresForStats(
+    sectionId: number,
+  ): Promise<Array<{ enrollment_id: number; weight: string | null; value: string | null }>> {
+    return (await this.database.execute(sql`
+      select e.id as enrollment_id, a.weight, ss.value
+      from enrollment e
+      join section sec on sec.id = e.section_id
+      join course_offering co on co.id = sec.course_offering_id
+      join syllabus sy on sy.course_offering_id = co.id
+      join assessment a on a.syllabus_id = sy.id
+      left join student_score ss on ss.assessment_id = a.id and ss.enrollment_id = e.id
+      where e.section_id = ${sectionId}
+        and e.status = 'active'
+    `)) as unknown as Array<{ enrollment_id: number; weight: string | null; value: string | null }>;
+  }
 }
