@@ -153,7 +153,7 @@ export class AuthRepository {
         s.specialty_setup_completed
       from app_user au
       join student s on s.user_id = au.id
-      where au.institutional_email = ${institutionalEmail.trim()}
+      where lower(au.institutional_email) = ${institutionalEmail.trim().toLowerCase()}
       limit 1
     `) as unknown as UserRow[];
 
@@ -216,6 +216,31 @@ export class AuthRepository {
       ...this.buildTeacherUser(row, label),
       passwordHash: row.password_hash,
     };
+  }
+
+  /** HU18: perfil docente por el correo de `app_user` para Google SSO. El
+   * correo referencial de `teacher` puede ser null; la identidad autenticable
+   * siempre vive en `app_user.institutional_email`. */
+  async findTeacherByEmail(institutionalEmail: string): Promise<TeacherAuthUser | null> {
+    const rows = await this.database.execute(sql`
+      select
+        au.id,
+        au.code,
+        au.full_name,
+        au.institutional_email,
+        au.token_version,
+        t.id as teacher_id
+      from app_user au
+      join teacher t on t.user_id = au.id
+      where lower(au.institutional_email) = ${institutionalEmail.trim().toLowerCase()}
+      limit 1
+    `) as unknown as TeacherRow[];
+
+    const row = rows[0];
+    if (!row) return null;
+
+    const label = await this.deriveTeacherLabel(Number(row.teacher_id));
+    return this.buildTeacherUser(row, label);
   }
 
   /** HU18: perfil docente por id de `app_user` (para `GET /auth/me`). */

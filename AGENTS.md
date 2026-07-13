@@ -50,7 +50,7 @@ Este repositorio usa Tessl con Spec Driven Development. No implementes comportam
 - Roles válidos: `student`, `delegate`, `subdelegate`, `teacher`. El rol equivocado en un módulo recibe 403 vía `requireRole(...)`.
 - Etiqueta Profesor/JP derivada de `section.teacher_id` vs `section.jp_id`, nunca un enum en la persona.
 - Representantes se derivan desde `section_representative`.
-- `student_score` contiene notas personales no oficiales.
+- `student_score` contiene las notas **oficiales** que el profesor/JP carga por evaluación (módulo `official-grades`, spec `specs/features/official-grades/official-grades.spec.md`). La nota final se calcula por ponderación en el cliente. Las notas **no oficiales** (simulación del propio alumno en la calculadora) viven en `simulated_grades` (módulo `simulated-grades`), NO en `student_score`.
 - Alertas `academic_risk` usan solo promedio personal: avance evaluado > 55% y promedio < 10.5.
 - Alertas `high_load` usan 3+ evaluaciones en una misma semana académica.
 - `student_course_progress` es progreso real de malla.

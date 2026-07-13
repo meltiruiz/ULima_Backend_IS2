@@ -1,6 +1,6 @@
 ---
 name: Course Detail
-description: Consulta de secciones, docentes, matrículas, anuncios, asesorías y contactos de curso (solo lectura)
+description: Consulta de secciones, docentes, matriculas, anuncios y contactos de curso (solo lectura)
 targets:
   - ../../../src/modules/course-detail/**
   - ../../../src/shared/middleware/auth-middleware.ts
@@ -10,44 +10,70 @@ targets:
 
 ## Scope
 
-Endpoints de solo lectura que exponen el detalle académico de cursos/secciones. Los payloads de request/response están definidos en `docs/specs/api-contracts.md`; esta spec fija la **autorización** requerida.
+Endpoints de solo lectura que exponen el detalle academico de cursos/secciones.
+El modulo incluye secciones, docentes, matriculas, anuncios academicos visibles y
+contactos de la seccion. Las asesorias del alumno viven en
+`src/modules/advising/student/` y se documentan en
+`specs/features/advising-student/advising-student.spec.md`.
 
 ## Business Rules
 
-### BR-COURSE-DETAIL-01: Autenticación obligatoria
-- Todas las rutas de `course-detail` requieren `Authorization: Bearer <JWT>` y pasan por `authMiddleware` (`app.use("*", authMiddleware)`).
-- Exponen datos sensibles (secciones, docentes, matrículas con códigos de alumno, contactos): no deben ser accesibles sin sesión válida.
-- Si falta el token → `401 MISSING_TOKEN`; si es inválido/expirado/revocado → `401 INVALID_TOKEN`.
+### BR-COURSE-DETAIL-01: Autenticacion obligatoria
+- Todas las rutas de `course-detail` requieren `Authorization: Bearer <JWT>` y pasan por `authMiddleware`.
+- Si falta el token -> `401 MISSING_TOKEN`; si es invalido/expirado/revocado -> `401 INVALID_TOKEN`.
 
-### BR-COURSE-DETAIL-02: Sub-petición interna autenticada
-- `GET /course-detail/sections/:sectionId` resuelve su data reutilizando `GET /course-detail/sections` mediante una sub-petición interna; ésta debe **reenviar el header `Authorization`** para no fallar el `authMiddleware`.
+### BR-COURSE-DETAIL-02: Roles permitidos
+- El modulo aplica `requireRole(...STUDENT_ROLES, "teacher")`.
+- Los alumnos consumen el detalle desde descripcion de cursos.
+- El rol docente puede leer contactos de una seccion desde el resumen del horario docente.
 
-### BR-COURSE-DETAIL-03: Solo roles de alumno (HU18)
-- Todo el módulo agrega `requireRole('student','delegate','subdelegate')`: un token docente recibe `403 FORBIDDEN` (las vistas de docente viven en `/advising/me/*`).
+### BR-COURSE-DETAIL-03: Asesorias fuera de este modulo
+- `GET /course-detail/sections/:sectionId/advising` esta eliminado.
+- Listado y RSVP usan `/advising/section/:sectionId` y `/advising/:sessionId/rsvp`.
 
-### BR-COURSE-DETAIL-04: Asesorías con extras, dictante y asistentes (HU18)
-- `GET /course-detail/sections/:sectionId/advising` agrega por item: `kind` (`recurring`/`extra`), `fecha` (`YYYY-MM-DD`, solo extras), `dictanteRol` (`"Profesor"` si `cas.teacher_id = sec.teacher_id` de la sección; `"JP"` si `= sec.jp_id`), `asistentes` (COUNT de `advising_rsvp`). Campos existentes intactos (compatibilidad con APKs viejos).
-- Las extras con `session_date` anterior a hoy no se listan.
-
-### BR-COURSE-DETAIL-05: JP en contactos (HU18)
-- `GET /course-detail/sections/:sectionId/contacts` agrega la clave top-level `jefePractica` (`{ code, lastName, firstName }` o `null`), derivada de `section.jp_id`.
+### BR-COURSE-DETAIL-04: JP y carnet de networking en contactos
+- `GET /course-detail/sections/:sectionId/contacts` devuelve:
+  - `docente`
+  - `jefePractica`
+  - `alumnos`
+- `docente`, `jefePractica` y cada alumno incluyen `networking` cuando existe informacion de carnet.
+- Si el usuario marco su carnet como oculto, `networking.optIn` llega como `false`.
 
 ## Endpoints
 
-Todos bajo `Authorization: Bearer <token>` (ver detalle de payloads en `docs/specs/api-contracts.md`):
+Todos bajo `Authorization: Bearer <token>`:
 
 - `GET /course-detail/sections`
 - `GET /course-detail/sections/:sectionId`
 - `GET /course-detail/sections/:sectionId/announcements`
-- `GET /course-detail/sections/:sectionId/advising`
 - `GET /course-detail/sections/:sectionId/contacts`
 - `GET /course-detail/teachers`
 - `GET /course-detail/enrollments`
 
-## Notes
+## Architecture
 
-- La autorización fina por usuario/rol (que cada alumno solo vea lo que le corresponde) queda como deuda pendiente; esta spec solo garantiza autenticación.
+### Repository Pattern
+- `course-detail.repository.ts` concentra SQL y acceso a BD.
+- No atrapa errores de BD; los deja subir al `errorHandler` global.
+
+### Service Layer
+- `course-detail.service.ts` coordina casos de lectura y conserva los contratos HTTP.
+- No contiene SQL ni helpers privados de transformacion.
+
+### Mapper Pattern
+- `course-detail.mapper.ts` centraliza las transformaciones:
+  - filas SQL de secciones -> `SectionResponse`
+  - filas SQL de docentes -> `TeacherResponse`
+  - filas SQL de matriculas -> `EnrollmentResponse`
+  - anuncios -> `AnnouncementResponse`
+  - contactos agrupados por docente/JP/alumno -> `ContactsResult`
+- Tambien concentra normalizacion de nombres, fechas, roles y carnet de networking.
+
+### DTO Validation
+- `course-detail.schemas.ts` usa Zod para validar `sectionId` en rutas parametrizadas.
 
 ## Test Links
 
-*(No hay tests automatizados enlazados aún.)*
+- `test/HU14_mel/contactos.cajanegra.test.ts`
+- `test/HU14_mel/contactos.cajablanca.test.ts`
+- `test/HU14_mel/contactos.unit.test.ts`

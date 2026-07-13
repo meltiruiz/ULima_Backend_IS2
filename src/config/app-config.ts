@@ -12,6 +12,13 @@ export const config = {
   email: {
     resendApiKey: env.RESEND_API_KEY,
     resendFrom: env.RESEND_FROM,
+    replyTo: env.RESEND_REPLY_TO,
+  },
+  firebase: {
+    projectId: env.FIREBASE_PROJECT_ID,
+    clientEmail: env.FIREBASE_CLIENT_EMAIL,
+    privateKey: env.FIREBASE_PRIVATE_KEY,
+    databaseUrl: env.FIREBASE_DATABASE_URL,
   },
   server: {
     port: env.PORT,
@@ -19,6 +26,10 @@ export const config = {
     isProduction: env.NODE_ENV === "production",
     isDevelopment: env.NODE_ENV === "development",
     corsOrigins: env.CORS_ORIGINS?.split(",").map((o) => o.trim()).filter(Boolean) ?? [],
+  },
+  chatbot: {
+    cohereApiKey: env.COHERE_API_KEY,
+    rateLimit: env.CHATBOT_RATE_LIMIT,
   },
 } as const;
 

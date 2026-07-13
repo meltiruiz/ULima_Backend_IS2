@@ -74,7 +74,9 @@ export class SectionManagementRepository {
       : null;
   }
 
-  async findAnnouncementsBySection(sectionId: number): Promise<AnnouncementRow[]> {
+  async findAnnouncementsByRepresentative(
+    sectionRepresentativeId: number,
+  ): Promise<AnnouncementRow[]> {
     return (await this.database.execute(sql`
       select
         a.id,
@@ -92,7 +94,7 @@ export class SectionManagementRepository {
       join enrollment e on e.id = sr.enrollment_id
       join student st on st.id = e.student_id
       join app_user au on au.id = st.user_id
-      where sr.section_id = ${sectionId}
+      where a.section_representative_id = ${sectionRepresentativeId}
         and a.is_active = true
       order by a.published_at desc
     `)) as unknown as AnnouncementRow[];
@@ -192,5 +194,24 @@ export class SectionManagementRepository {
       where id = ${id}
         and is_active = true
     `);
+  }
+
+  // HU11: notas oficiales por (matrícula activa, evaluación) de la sección, para
+  // calcular las estadísticas del salón. `value` es null si la evaluación aún no
+  // fue calificada (la lógica pura la ignora).
+  async findSectionScoresForStats(
+    sectionId: number,
+  ): Promise<Array<{ enrollment_id: number; weight: string | null; value: string | null }>> {
+    return (await this.database.execute(sql`
+      select e.id as enrollment_id, a.weight, ss.value
+      from enrollment e
+      join section sec on sec.id = e.section_id
+      join course_offering co on co.id = sec.course_offering_id
+      join syllabus sy on sy.course_offering_id = co.id
+      join assessment a on a.syllabus_id = sy.id
+      left join student_score ss on ss.assessment_id = a.id and ss.enrollment_id = e.id
+      where e.section_id = ${sectionId}
+        and e.status = 'active'
+    `)) as unknown as Array<{ enrollment_id: number; weight: string | null; value: string | null }>;
   }
 }

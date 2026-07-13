@@ -20,12 +20,30 @@ const envSchema = z.object({
   // así, aun si RESEND_FROM no está seteada en algún entorno, NO se envía desde
   // onboarding@resend.dev (Gmail lo mira con más sospecha). En Vercel debe estar
   // igualmente seteada RESEND_FROM con este mismo valor.
-  RESEND_FROM: z.string().optional().default("ULima+ <no-reply@mail.grupo5app.lat>"),
+  // OJO: NO usar un buzón "no-reply" en el local-part — Resend/Gmail lo marcan
+  // como señal de spam. Usamos "notificaciones@" (dirección con propósito claro).
+  RESEND_FROM: z.string().optional().default("ULima+ <notificaciones@mail.grupo5app.lat>"),
+  // Dirección de respuesta (Reply-To). Conviene un buzón REAL y monitoreado:
+  // que los correos puedan responderse mejora la entregabilidad (Gmail toma la
+  // interacción como señal positiva) y evita el patrón "solo no-reply". Si está
+  // vacía, no se agrega Reply-To. Setear también en Vercel.
+  RESEND_REPLY_TO: z.string().optional().default(""),
   // Máximo de códigos de restablecimiento por usuario por hora. Default 3
   // (anti-abuso); subirlo solo temporalmente en períodos de prueba/QA.
   PASSWORD_RESET_MAX_PER_HOUR: z.string().optional().transform((v) => {
     const n = parseInt(v ?? "3", 10);
     return Number.isInteger(n) && n > 0 ? n : 3;
+  }),
+  // Firebase Admin SDK (HU23 chat). Opcionales para no romper módulos que no
+  // usan chat; el servicio de chat debe validar presencia antes de firmar tokens.
+  FIREBASE_PROJECT_ID: z.string().optional().default(""),
+  FIREBASE_CLIENT_EMAIL: z.string().email().optional().or(z.literal("")).default(""),
+  FIREBASE_PRIVATE_KEY: z.string().optional().default(""),
+  FIREBASE_DATABASE_URL: z.string().url().optional().or(z.literal("")).default(""),
+  COHERE_API_KEY: z.string().min(1, "COHERE_API_KEY es requerida para el chatbot"),
+  CHATBOT_RATE_LIMIT: z.string().optional().transform((v) => {
+    const n = parseInt(v ?? "20", 10);
+    return Number.isInteger(n) && n > 0 ? n : 20;
   }),
 });
 

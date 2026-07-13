@@ -6,8 +6,15 @@ dist/
 
 # Environment files
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+
+# Secretos (nunca versionar)
+service-account*.json
+*-firebase-adminsdk-*.json
+*.p12
+*.pem
+*log-export*.csv
 
 # IDE
 .vscode/
@@ -45,3 +52,7 @@ coverage/
 # Backups de BD: NUNCA versionar (contienen hashes y datos de producción)
 backup_*.sql
 *.dump
+
+# Mutation testing (Stryker)
+.stryker-tmp/
+reports/

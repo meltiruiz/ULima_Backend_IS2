@@ -36,9 +36,9 @@ Diseño de origen: `~/Desktop/ULIMA++/DISENO_PROFESORES.md` (aprobado 2026-07-05
 
 ### BR-ADV-02b: Convención de cuentas docentes (seed)
 - **Usuario** (`app_user.code`) = `[primera letra del nombre][apellido paterno]`, en minúsculas, sin tildes, con tope de 8 caracteres — derivado de `teacher.full_name` como `(inicial + apellidoPaternoSinTildes).toLowerCase().slice(0,8)` (ej. "H. Quintana" → `hquintan`).
-- **Correo institucional** (`app_user.institutional_email`) = `<usuario>@ulima.edu.pe` (dominio docente, distinto del `@aloe.ulima.edu.pe` de alumnos). Google SSO sigue siendo solo de alumnos: los docentes entran por código + contraseña.
-- **Contraseña** (bcrypt costo 10): profesores `profesor2026`, JPs `jefe2026`.
-- Datos concretos de la demo: JP **Aaron Lo Li** → usuario `alo`, `alo@ulima.edu.pe`, `jefe2026`, asignado a la sección de ISW2 de Jeff. El profesor de esa sección ya existe en `teacher`; su cuenta se genera con la misma convención sobre su `full_name` real.
+- **Correo institucional** (`app_user.institutional_email`) = `<usuario>@ulima.edu.pe` (dominio docente, distinto del `@aloe.ulima.edu.pe` de alumnos). El docente puede entrar con Google SSO si su cuenta ya está vinculada mediante `teacher.user_id`; código + contraseña permanece como alternativa.
+- **Contraseña** (bcrypt costo 10): se fija al correr el seed vía variables de entorno (`PROF_PASSWORD` para profesores, `JP_PASSWORD` para JPs); no se hardcodea en el código ni se documenta en el repo.
+- Datos concretos de la demo: JP **Aaron Lo Li** → usuario `alo`, `alo@ulima.edu.pe`, contraseña vía env, asignado a la sección de ISW2 de Jeff. El profesor de esa sección ya existe en `teacher`; su cuenta se genera con la misma convención sobre su `full_name` real.
 
 ### BR-ADV-03: Asesorías extra (extensión de `course_advising_session`)
 - Enum nuevo `advising_kind` = `recurring | extra`. Columna `kind` NOT NULL DEFAULT `'recurring'` — las filas existentes siguen siendo recurrentes.
@@ -50,7 +50,7 @@ Diseño de origen: `~/Desktop/ULIMA++/DISENO_PROFESORES.md` (aprobado 2026-07-05
 
 ### BR-ADV-04: RSVP (tabla compartida con HU17)
 - Tabla nueva `advising_rsvp (id, advising_session_id FK, student_id FK, created_at, UNIQUE(advising_session_id, student_id))`.
-- HU18 solo la **lee** (conteo y lista de asistentes). Los endpoints de escritura del alumno (confirmar/cancelar) son de HU17 y se especificarán allí.
+- HU18 solo la **lee** (conteo y lista de asistentes). Los endpoints de escritura del alumno (confirmar/cancelar) son de **HU17** → BR-ADV-22 (viven en `course-detail`, no en `advising`, porque este módulo está gateado a `teacher`).
 
 ## Endpoints — módulo `src/modules/advising/` (capas limpias)
 
@@ -94,12 +94,9 @@ Asesorías del docente autenticado (recurrentes + extras), con conteo de confirm
 - Mismo control de existencia/propiedad que BR-ADV-13 (404/403).
 - **Response 200**: `{ "total": number, "asistentes": [ { "code", "firstName", "lastName" } ] }` ordenado por apellido.
 
-## Extensiones a course-detail (vista del alumno)
+## Vista del alumno — sub-módulo `advising/student/` (HU17)
 
-### BR-ADV-20: GET /course-detail/sections/:sectionId/advising
-Cada item de `asesorias` agrega: `"kind": "recurring"|"extra"`, `"fecha": "YYYY-MM-DD"|null`, `"dictanteRol": "Profesor"|"JP"`, `"asistentes": number`. Los campos existentes no cambian (compatibilidad con APKs viejos).
-- `dictanteRol`: `cas.teacher_id = sec.jp_id` → "JP"; si no → "Profesor". (Caso 8.)
-- Además del filtro actual, se incluyen las extras de la sección; las extras con `session_date` pasada no se listan.
+El listado de asesorías y RSVP del alumno viven en `src/modules/advising/student/`. Ver spec completa en `specs/features/advising-student/advising-student.spec.md`.
 
 ### BR-ADV-21: GET /course-detail/sections/:sectionId/contacts
 Agrega clave top-level `"jefePractica": { "code", "lastName", "firstName" } | null` (desde `section.jp_id`), entre `docente` y `alumnos`. (Caso 8: JP visible en Contactos.)

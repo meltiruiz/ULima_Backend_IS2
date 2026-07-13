@@ -8,6 +8,34 @@
       "when": 1783439583634,
       "tag": "0000_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783738956141,
+      "tag": "0001_flowery_jack_flag",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783813643375,
+      "tag": "0002_slim_miracleman",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783838677331,
+      "tag": "0003_spicy_ironclad",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783880455250,
+      "tag": "0003_groovy_kulan_gath",
+      "breakpoints": true
     }
   ]
 }

@@ -8,7 +8,7 @@ ULima++ es una app académica móvil para estudiantes de la Universidad de Lima.
 
 - App centrada en estudiantes; desde HU18 hay además un rol docente acotado (profesor/JP) que solo gestiona asesorías extra de sus secciones (módulo `advising`).
 - No hay pantallas admin.
-- Login docente (HU18): un `app_user` vinculado a `teacher.user_id` inicia sesión con código+contraseña y rol técnico `teacher`. No hay Google SSO docente; el aprovisionamiento de docentes/JP se hace por seed aprobado, no por producto.
+- Login docente (HU18): un `app_user` vinculado a `teacher.user_id` inicia sesión con código+contraseña o Google SSO `@ulima.edu.pe` y rol técnico `teacher`. El SSO no autoaprovisiona docentes/JP; la cuenta y su vínculo deben existir previamente.
 - PostgreSQL es la única fuente de verdad.
 - Los JSON del frontend son descartables y no se migran.
 - La base ya está creada; el backend no debe crear ni poblar tablas salvo cambios aprobados por spec (HU18 agrega columnas/tabla aditivas y un seed de docentes).
@@ -138,3 +138,10 @@ Shared:
 - No lógica fuera de spec.
 - No endpoints fuera de `docs/specs/api-contracts.md`.
 - No modificar `src/db` salvo cambio de BD aprobado.
+
+## Troubleshooting
+
+### Vercel `FUNCTION_INVOCATION_FAILED` (ERR_REQUIRE_ESM with jose/jwks-rsa)
+**Síntoma**: Al desplegar en Vercel, el backend crashea inmediatamente con `Error [ERR_REQUIRE_ESM]: require() of ES Module /var/task/node_modules/jose/dist/webapi/index.js from /var/task/node_modules/jwks-rsa/src/utils.js not supported.`
+**Causa**: Las versiones muy recientes de `firebase-admin` (v13, v14) usan dependencias internas (`jwks-rsa` > `jose`) que entran en conflicto con la forma en que Vercel empaqueta módulos ESM (`type: "module"` en `package.json`).
+**Solución**: Se debe hacer un downgrade de `firebase-admin` a la versión `12.1.0` (o `12.x`), la cual utiliza una versión de `jose` compatible con CommonJS/ESM mixto en entornos Serverless de Vercel.

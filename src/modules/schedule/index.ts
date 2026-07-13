@@ -14,5 +14,6 @@ export const scheduleRoutes = createScheduleRoutes(scheduleController);
 export { ScheduleController } from "./schedule.controller.js";
 export { ScheduleRepository } from "./schedule.repository.js";
 export { ScheduleService } from "./schedule.service.js";
+export { scheduleService };
 export { academicPeriodQuerySchema } from "./schedule.schemas.js";
 export type { ScheduleView } from "./schedule.types.js";

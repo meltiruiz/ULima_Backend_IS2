@@ -5,50 +5,15 @@ import type {
   UpdateAnnouncementBody,
 } from "./section-management.schemas.js";
 import type { SectionManagementRepository } from "./section-management.repository.js";
+import { computeSectionStatistics, type SectionStatistics } from "./section-statistics.logic.js";
 import type {
-  AnnouncementResponse,
-  AnnouncementRow,
   AnnouncementsResult,
-  RepresentativePosition,
   RepresentativesResult,
 } from "./section-management.types.js";
-
-const splitName = (fullName: string) => {
-  if (fullName.includes(",")) {
-    const parts = fullName.split(",");
-    return {
-      lastName: parts[0].trim(),
-      firstName: parts.slice(1).join(",").trim(),
-    };
-  }
-
-  const parts = fullName.trim().split(/\s+/);
-  if (parts.length > 2) {
-    return {
-      lastName: parts.slice(0, 2).join(" "),
-      firstName: parts.slice(2).join(" "),
-    };
-  }
-  if (parts.length === 2) {
-    return {
-      lastName: parts[0],
-      firstName: parts[1],
-    };
-  }
-
-  return {
-    firstName: fullName,
-    lastName: "",
-  };
-};
-
-const formatDate = (value: Date | string | null) => {
-  if (value instanceof Date) return value.toISOString();
-  return String(value ?? "");
-};
-
-const roleLabel = (position: RepresentativePosition) =>
-  position === "subdelegate" ? "subdelegado" : "delegado";
+import {
+  mapAnnouncementRowToResponse,
+  mapRepresentativePositionToLabel,
+} from "./section-management.mapper.js";
 
 export class SectionManagementService {
   constructor(
@@ -67,7 +32,7 @@ export class SectionManagementService {
           codigoSeccion: row.section_code,
           idCurso: String(row.course_id),
           nombreCurso: row.course_name,
-          role: roleLabel(row.position),
+          role: mapRepresentativePositionToLabel(row.position),
           alumnosMatriculados: Number(row.enrolled_students),
         })),
       };
@@ -81,11 +46,24 @@ export class SectionManagementService {
     sectionId: number,
   ): Promise<AnnouncementsResult> {
     try {
-      await this.requireRepresentative(studentId, sectionId);
-      const rows = await this.repository.findAnnouncementsBySection(sectionId);
-      return { anuncios: rows.map((row) => this.mapAnnouncement(row)) };
+      const representative = await this.requireRepresentative(studentId, sectionId);
+      const rows = await this.repository.findAnnouncementsByRepresentative(representative.id);
+      return { anuncios: rows.map(mapAnnouncementRowToResponse) };
     } catch (e) {
       throw this.wrap(e, "getAnnouncements");
+    }
+  }
+
+  // HU11: estadísticas REALES del salón (promedio, % aprobados, histograma)
+  // calculadas desde las notas oficiales. Solo el delegado/subdelegado de la
+  // sección puede verlas.
+  async getStatistics(studentId: number, sectionId: number): Promise<SectionStatistics> {
+    try {
+      await this.requireRepresentative(studentId, sectionId);
+      const rows = await this.repository.findSectionScoresForStats(sectionId);
+      return computeSectionStatistics(rows);
+    } catch (e) {
+      throw this.wrap(e, "getStatistics");
     }
   }
 
@@ -108,7 +86,7 @@ export class SectionManagementService {
 
       return {
         message: "Anuncio publicado correctamente.",
-        anuncio: this.mapAnnouncement(created),
+        anuncio: mapAnnouncementRowToResponse(created),
       };
     } catch (e) {
       throw this.wrap(e, "createAnnouncement");
@@ -134,7 +112,7 @@ export class SectionManagementService {
 
       return {
         message: "Cambios guardados correctamente.",
-        anuncio: this.mapAnnouncement(updated),
+        anuncio: mapAnnouncementRowToResponse(updated),
       };
     } catch (e) {
       throw this.wrap(e, "updateAnnouncement");
@@ -178,27 +156,6 @@ export class SectionManagementService {
     }
 
     return ownership;
-  }
-
-  private mapAnnouncement(row: AnnouncementRow): AnnouncementResponse {
-    const role = roleLabel(row.position);
-    return {
-      id: String(row.id),
-      idSeccion: String(row.section_id),
-      titulo: row.title,
-      mensaje: row.message,
-      fecha: formatDate(row.published_at),
-      autorCode: row.autor_code,
-      autor: {
-        code: row.autor_code,
-        ...splitName(row.full_name),
-        email: row.institutional_email,
-        role,
-        career_id: null,
-        currentCycle: "2026-1",
-        setupComplete: true,
-      },
-    };
   }
 
   private wrap(e: unknown, where: string): HttpError {

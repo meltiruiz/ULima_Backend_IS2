@@ -21,6 +21,7 @@ Esta spec recupera el alcance original de representantes y lo complementa con:
 
 - Se sigue la arquitectura del backend: `routes -> controller -> service -> repository -> db`.
 - Se aplica **Repository Pattern** para encapsular consultas a `announcement`, `section_representative`, `enrollment`, `student` y `app_user`.
+- Se aplica **Mapper Pattern** para convertir filas de gestion de anuncios (`AnnouncementRow`) al contrato HTTP (`AnnouncementResponse`). El mapper solo transforma datos: no valida permisos, no consulta BD y no decide reglas de negocio.
 - Se aplica **Service Layer** para reglas de negocio: autorización por sección, ownership de anuncios y soft delete.
 - Se usa validación DTO con **Zod** en `section-management.schemas.ts`.
 - No se agregan observers/eventos reales en `src/events` porque la spec no define efectos secundarios.
@@ -52,9 +53,10 @@ Esta spec recupera el alcance original de representantes y lo complementa con:
 - Los anuncios creados se muestran al alumnado desde `GET /course-detail/sections/:sectionId/announcements`, que lee `announcement` y ordena del más reciente al más antiguo.
 
 ### BR-SECTION-MGMT-05: HU11 - Visualizar estadísticas del curso
-- **Pendiente/no implementada** en backend.
-- No se implementa `GET /section-management/sections/:sectionId/progress` en esta HU.
-- Cuando se implemente, debe restringirse a representantes activos de la sección y no exponer notas individuales.
+- `GET /section-management/sections/:sectionId/statistics` devuelve las estadísticas REALES del salón, calculadas desde las notas oficiales (`student_score`): `{ promedioGeneral, porcentajeAprobados, rango0_10, rango11_13, rango14_16, rango17_20 }`.
+- **Cálculo** (lógica pura en `section-statistics.logic.ts`): por alumno, promedio ponderado sobre lo YA calificado (Σ nota·peso / Σ peso). Sobre esos promedios: media (`promedioGeneral`), % con promedio ≥ 10.5 (`porcentajeAprobados`) e histograma por rango de la nota **redondeada** (0-10, 11-13, 14-16, 17-20). Solo cuentan los alumnos con al menos una nota; si nadie tiene notas, todo es 0.
+  `[@test] ../../../test/section-statistics.logic.test.ts`
+- Restringido al **delegado/subdelegado activo** de la sección (`requireRepresentative`); no expone notas individuales, solo agregados.
 
 ## Endpoints
 
@@ -65,7 +67,7 @@ Bajo `Authorization: Bearer <token>` (rol alumno):
 - `POST /section-management/sections/:sectionId/announcements`
 - `PUT /section-management/announcements/:id`
 - `DELETE /section-management/announcements/:id`
-- `GET /section-management/sections/:sectionId/progress` (**HU11 pendiente/no implementado**)
+- `GET /section-management/sections/:sectionId/statistics` (HU11 — solo delegado/subdelegado)
 
 ## Test Links
 

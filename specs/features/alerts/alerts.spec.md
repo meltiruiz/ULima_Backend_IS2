@@ -16,11 +16,14 @@ App móvil centrada en el estudiante: genera y expone alertas académicas a part
 | --- | --- |
 | HU08 | Como alumno quiero recibir alertas de riesgo académico y de alta carga de evaluaciones. |
 
-## Business Rules
-
 ### BR-ALERT-01: Autorización
 - Todo el módulo requiere `Authorization: Bearer <JWT>` (`authMiddleware`) y rol de alumno (`requireRole('student','delegate','subdelegate')`); un token docente recibe `403 FORBIDDEN`.
 - El `studentId` sale del contexto del JWT; si falta → `401 STUDENT_NOT_FOUND`.
+
+### BR-ALERT-06: Alertas de inasistencias (`academic_risk`)
+- Las alertas creadas por el docente vía `attendance-risk.notify` también tienen tipo `academic_risk`.
+- Cuando el estudiante consulta `GET /alerts/me`, estas alertas se augmentan con `courseName` y `sectionCode` igual que las de riesgo académico.
+- El título de una alerta de inasistencia sigue el formato `"Alerta de inasistencias - <courseName>"` para permitir la extracción del nombre del curso en `augmentAlerts`.
 
 ### BR-ALERT-02: Riesgo académico (`academic_risk`)
 - Se evalúa por curso, agregando las evaluaciones **ya calificadas** del alumno.
@@ -29,6 +32,15 @@ App móvil centrada en el estudiante: genera y expone alertas académicas a part
 - **Umbral**: se genera alerta si `gradedWeight > 55` **y** `promedioPersonal < 10.5` (avance evaluado mayor al 55% y promedio menor a 10.5). Ambos bordes son estrictos.
   `[@test] ../../../test/alerts.logic.test.ts`
 - La lógica de agregación y umbral es pura y vive en `alerts.logic.ts` (`aggregateCourseScores`, `personalAverage`, `isAcademicRisk`).
+
+### BR-ALERT-07: Riesgo crítico (`academic_risk`, título `Riesgo Crítico: <curso>`)
+- Detecta a media asignatura (antes de que aplique BR-ALERT-02 por poco avance) a los alumnos que ya casi no pueden aprobar, usando el peso **restante** (evaluaciones aún no publicadas).
+- `totalWeight` = suma de los pesos de **todas** las evaluaciones del curso (calificadas o no; cada `assessment_id` cuenta una vez). `requiredOnRemaining = (10.5·totalWeight − weightedSum) / (totalWeight − gradedWeight)` = nota promedio necesaria en lo que falta para llegar a la aprobatoria (`PASSING_GRADE = 10.5`).
+- **Umbral**: hay al menos una nota (`gradedWeight > 0`), queda peso por calificar (`totalWeight − gradedWeight > 0`) y `requiredOnRemaining > 15` (`CRITICAL_REQUIRED_ON_REMAINING`). Borde estricto (exactamente 15 NO es crítico).
+- **Precedencia**: si un curso es crítico, se emite **solo** la alerta crítica (no también la de BR-ALERT-02) para no duplicar el aviso.
+- Reusa el `type` `academic_risk` (no se agrega enum); se distingue por el título `Riesgo Crítico: <curso>`. Deduplicado por título (BR-ALERT-04) y aumentado con curso/sección como las demás.
+- Lógica pura en `alerts.logic.ts` (`aggregateCourseScores.totalWeight`, `requiredOnRemaining`, `isCriticalRisk`).
+  `[@test] ../../../test/alerts.logic.test.ts`
 
 ### BR-ALERT-03: Alta carga (`high_load`)
 - Se genera una alerta por cada **semana académica con 3 o más evaluaciones** programadas (`getHighLoadWeeks`, `count(assessment) >= 3` agrupado por `week_number`).
