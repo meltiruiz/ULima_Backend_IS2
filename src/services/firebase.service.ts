@@ -94,13 +94,45 @@ class FirebaseService {
       throw new Error("Failed to register chat member");
     }
   }
+  public async getRecentMessages(
+    sectionId: number,
+    limit: number = 200,
+    since?: number,
+  ): Promise<Array<{ id: string; senderName: string; body: string; createdAt: number }>> {
+    if (!this.initialized) {
+      console.warn("Firebase not initialized, skipping chat message fetch");
+      return [];
+    }
+
+    try {
+      const ref = getDatabase().ref(`sections/${sectionId}/messages`);
+      let query = ref.orderByChild("createdAt").limitToLast(limit);
+
+      const snapshot = await query.once("value");
+      const data = snapshot.val() as Record<string, { senderName?: string; body?: string; createdAt?: number }> | null;
+      if (!data) return [];
+
+      let messages = Object.entries(data).map(([id, msg]) => ({
+        id,
+        senderName: msg.senderName ?? "Desconocido",
+        body: msg.body ?? "",
+        createdAt: msg.createdAt ?? 0,
+      }));
+
+      if (since) {
+        messages = messages.filter((m) => m.createdAt >= since);
+      }
+
+      return messages.sort((a, b) => a.createdAt - b.createdAt);
+    } catch (error) {
+      console.error("Error reading chat messages from Firebase:", error);
+      return [];
+    }
+  }
 
   /**
-   * HU23: "borrado suave" de un mensaje del chat. Marca el nodo con `deleted` +
-   * quién lo eliminó (lápida "eliminado por…"), en vez de removerlo. Se hace con
-   * el Admin SDK (salta las reglas RTDB), y la autorización (solo el profesor de
-   * la sección) la valida el backend ANTES de llamar aquí. Devuelve si el mensaje
-   * existía para poder responder 404.
+   * HU23: soft delete a chat message by marking it instead of removing it.
+   * The backend already validates authorization before calling this method.
    */
   public async softDeleteChatMessage(
     sectionId: number,

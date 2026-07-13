@@ -13,6 +13,7 @@ import {
   timestamp,
   unique,
   uniqueIndex,
+  uuid,
   varchar,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -500,4 +501,24 @@ export const alert = pgTable("alert", {
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
 }, (t) => ({
   idxAlertStudent: index("idx_alert_student").on(t.studentId),
+}));
+
+export const chatbotSession = pgTable("chatbot_session", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  studentId: integer("student_id").notNull().references(() => student.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 100 }).notNull().default("Nueva conversacion"),
+  createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+}, (t) => ({
+  idxChatbotSessionStudent: index("idx_chatbot_session_student").on(t.studentId),
+}));
+
+export const chatbotMessage = pgTable("chatbot_message", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  sessionId: uuid("session_id").notNull().references(() => chatbotSession.id, { onDelete: "cascade" }),
+  role: varchar("role", { length: 10 }).notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+}, (t) => ({
+  idxChatbotMessageSession: index("idx_chatbot_message_session").on(t.sessionId),
 }));

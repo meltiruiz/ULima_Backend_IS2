@@ -459,21 +459,26 @@ Notas:
 
 - `GET /course-detail/sections/:sectionId`
 - `GET /course-detail/sections/:sectionId/announcements`
-- `GET /course-detail/sections/:sectionId/advising`
 - `GET /course-detail/sections/:sectionId/contacts`
-- `POST /course-detail/advising/:sessionId/rsvp` (HU17)
-- `DELETE /course-detail/advising/:sessionId/rsvp` (HU17)
+- `GET /course-detail/sections` (lista general)
+- `GET /course-detail/teachers`
+- `GET /course-detail/enrollments`
 
 Notas:
 
-- Solo roles de alumno (`requireRole('student','delegate','subdelegate')`); un token docente recibe `403 FORBIDDEN` (salvo `GET /advising` del detalle, permitido también a `teacher` para cargar contactos).
+- Solo roles de alumno (`requireRole('student','delegate','subdelegate')`); un token docente recibe `403 FORBIDDEN` (salvo `GET` de contactos, permitido también a `teacher`).
 - El estudiante solo ve secciones donde está matriculado.
-- Asesorías visibles: `section_id IS NULL` para el curso ofertado o `section_id` igual a su sección. Se incluyen las extras (`kind='extra'`) de la sección cuya `session_date` no sea pasada.
-- Cada asesoría agrega (HU18): `kind` (`recurring`/`extra`), `fecha` (`YYYY-MM-DD`, solo extras; `null` en recurrentes), `dictanteRol` (`"Profesor"` o `"JP"` según sea `section.teacher_id` o `section.jp_id`), `asistentes` (conteo de `advising_rsvp`). Los campos previos (`id, courseId, docenteCode, docente, dia, inicio, fin, aula, zoom`) no cambian.
-- **HU17**: cada asesoría agrega `myRsvp` (`boolean`) — `true` si el alumno autenticado ya confirmó su asistencia; siempre `false` con un token docente.
-- **HU17 RSVP** (`POST`/`DELETE /course-detail/advising/:sessionId/rsvp`): confirma/cancela la asistencia del alumno autenticado (`studentId` del JWT, nunca del body). Ambos idempotentes (unique `(advising_session_id, student_id)`; cancelar sin confirmación es no-op). Response `200`: `{ id, asistentes, myRsvp }` con el conteo actualizado. Errores: `404 ADVISING_SESSION_NOT_FOUND` (el alumno no participa de esa asesoría: no tiene matrícula activa en una sección que la vea) en `POST`; `403 ADVISING_RSVP_STUDENT_ONLY` si el token es docente. Viven en `course-detail` (no en `advising`) porque el módulo `advising` está gateado a `teacher`.
 - Contactos agrega la clave top-level `jefePractica` (`{ code, lastName, firstName }` o `null`) desde `section.jp_id`, entre `docente` y `alumnos`.
 - Anuncios visibles solo si pertenecen a la sección del estudiante.
+- El listado de asesorías y el RSVP del alumno migraron al módulo `advising-student` (ver abajo).
+
+## Advising Student — RSVP del alumno (HU17)
+
+Sub-módulo `student/` dentro de `src/modules/advising/`. Rol requerido: `student`, `delegate`, `subdelegate`. Detalle en `specs/features/advising-student/advising-student.spec.md`.
+
+- `GET /advising/section/:sectionId` — lista asesorías (recurrentes + extras) visibles para la sección, excluyendo pasadas. Response: `{ asesorias: AdvisingItem[] }`.
+- `POST /advising/:sessionId/rsvp` — confirma asistencia (`studentId` del JWT). Rechaza si ya pasó (`409 SESSION_ALREADY_PAST`). Idempotente. Response: `{ id, asistentes, myRsvp: true }`. Errores: `403 RSVP_STUDENT_ONLY`, `404 SESSION_NOT_FOUND`.
+- `DELETE /advising/:sessionId/rsvp` — cancela asistencia. Idempotente. Response: `{ id, asistentes, myRsvp: false }`.
 
 ## Advising (HU18 — docentes)
 
@@ -488,7 +493,7 @@ Rol requerido: `teacher` (`requireRole('teacher')`). Detalle y reglas en `specs/
 Notas:
 
 - Todo el módulo comparte la guarda defensiva `401 TEACHER_NOT_FOUND` (contexto sin `teacherId`; no ocurre tras `authMiddleware`+`requireRole('teacher')`).
-- Los endpoints de RSVP del alumno (HU17) viven en el módulo de alumno `course-detail` (`POST/DELETE /course-detail/advising/:sessionId/rsvp`), **no** aquí: este módulo está gateado a `teacher`. HU18 solo lee `advising_rsvp` (conteo/lista de confirmados).
+- Los endpoints de RSVP del alumno (HU17) viven en el sub-módulo `advising/student/` (`POST/DELETE /advising/:sessionId/rsvp`), **no** aquí: el sub-router `teacher/` está gateado a `teacher`. HU18 solo lee `advising_rsvp` (conteo/lista de confirmados).
 
 ## Alerts
 
@@ -542,3 +547,30 @@ Notas:
 
 - El carnet solo se expone si el dueño hizo opt-in; quitar el opt-in lo oculta sin borrar los enlaces.
 - Compartir en el chat de sección: el mensaje referencia `userId` y el receptor resuelve el carnet vía `GET /networking/users/:userId` (fuente de verdad = Postgres, no se duplican redes en Firebase). Solo el carnet propio y en secciones donde el usuario es miembro.
+
+## Chatbot (Asistente Académico con IA)
+
+Inteligencia artificial conversacional (Cohere) integrada como asistente académico para alumnos. Detalle en `specs/features/chatbot/chatbot.spec.md`.
+
+### Sesiones
+
+- `POST /chatbot/sessions` — crea una nueva sesión vacía para el alumno autenticado. Roles requeridos: `student`, `delegate`, `subdelegate`. Response `201`: `{ "session": { "id": "uuid", "title": "Nueva conversacion", "createdAt": "ISO-8601", "updatedAt": "ISO-8601" } }`.
+- `GET /chatbot/sessions` — lista todas las sesiones del alumno ordenadas por `updated_at` descendente. Response `200`: `{ "sessions": [ { "id", "title", "createdAt", "updatedAt" } ] }`.
+- `GET /chatbot/sessions/:id` — obtiene sesión con todos sus mensajes. Response `200`: `{ "session": { ... }, "messages": [ { "id", "role": "user"|"assistant", "content", "createdAt" } ] }`. Error: `404 SESSION_NOT_FOUND`.
+- `DELETE /chatbot/sessions/:id` — elimina sesión y sus mensajes en cascada. Response `200`: `{ "message": "Sesion eliminada correctamente." }`. Error: `404 SESSION_NOT_FOUND`.
+
+### Preguntas
+
+- `POST /chatbot/sessions/:id/ask` — envía una pregunta en lenguaje natural y recibe respuesta del chatbot. Body: `{ "question": "string<=500", "localGrades?": [{ "id": "string", "nombre": "string", "notas": [{ "titulo": "string", "peso": 0-100, "valor": 0-20 }] }] }`. Response `200`: `{ "answer": "string", "sessionId": "uuid" }`. Errores: `400 INVALID_QUESTION`, `404 SESSION_NOT_FOUND`, `429 RATE_LIMITED` (máx. 20 preguntas/hora/alumno), `503 CHATBOT_UNAVAILABLE`.
+
+### Reglas
+
+- El chatbot solo responde con datos reales del alumno contenidos en el contexto (DB + notas locales + Firebase RTDB). No inventa.
+- La clasificación de intención usa Cohere Classify con keyword fallback en español.
+- La búsqueda en chat usa Cohere Rerank sobre mensajes recientes de Firebase RTDB (sin almacenar embeddings).
+- Ventana de contexto limitada a últimos 10 mensajes del historial de la sesión.
+- Prompt injection bloqueada (400 si contiene `<context>`, `[CONTEXTO]`, `system:`, `assistant:`).
+- Título automático de sesión se genera con Cohere en la primera pregunta.
+- Rate limit: 20 preguntas/hora/alumno (configurable via `CHATBOT_RATE_LIMIT`).
+- Timeout Cohere Chat: 8 segundos. Errores Cohere retornan 503 con mensaje genérico.
+- Requiere `COHERE_API_KEY` en variables de entorno.

@@ -27,6 +27,10 @@ export const config = {
     isDevelopment: env.NODE_ENV === "development",
     corsOrigins: env.CORS_ORIGINS?.split(",").map((o) => o.trim()).filter(Boolean) ?? [],
   },
+  chatbot: {
+    cohereApiKey: env.COHERE_API_KEY,
+    rateLimit: env.CHATBOT_RATE_LIMIT,
+  },
 } as const;
 
 export type AppConfig = typeof config;
