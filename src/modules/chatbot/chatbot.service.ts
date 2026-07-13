@@ -15,6 +15,9 @@ export class ChatbotService {
   constructor(
     private readonly repository: ChatbotRepository,
     private readonly scheduleService: ScheduleService,
+    // Inyectable para tests (default: la función real). Evita tener que mockear
+    // el módulo chat-search.js globalmente, que en Bun se filtra entre archivos.
+    private readonly searchChat: typeof searchChatMessages = searchChatMessages,
   ) {}
 
   async createSession(studentId: number): Promise<ChatbotSessionRow> {
@@ -179,7 +182,7 @@ export class ChatbotService {
   private async getChatResults(studentId: number, question: string) {
     const sectionDetails = await this.repository.getActiveSectionDetails(studentId);
     if (sectionDetails.length === 0) return null;
-    const results = await searchChatMessages(question, sectionDetails);
+    const results = await this.searchChat(question, sectionDetails);
     return results.length > 0 ? results : null;
   }
 
