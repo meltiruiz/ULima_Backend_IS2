@@ -27,9 +27,20 @@ import type {
  *   delegado vea/edite/elimine anuncios de otro alumno delegado.
  *
  * Justificacion de caja blanca:
- *   Se conocen los metodos internos y sus decisiones principales. Por eso se
- *   cubre un camino por predicado relevante, aislando la BD con un repositorio
- *   falso y observando que errores o acciones ejecuta el servicio.
+ *   La rubrica permite aplicar caja blanca a un modulo o a un metodo. Esta
+ *   prueba usa el modulo SectionManagementService porque la HU10 no depende de
+ *   un unico metodo aislado: crear, editar y borrar comparten las mismas reglas
+ *   internas de representante y ownership.
+ *
+ *   Complejidad ciclomática justificada:
+ *   El modulo tiene mas de 4 decisiones relevantes para la HU10:
+ *     D1 requireRepresentative(): representante existe/no existe.
+ *     D2 createAnnouncement(): anuncio creado se recupera/no se recupera.
+ *     D3 requireAnnouncementOwner(): anuncio existe y esta activo/no existe.
+ *     D4 requireAnnouncementOwner(): owner coincide/no coincide.
+ *     D5 deleteAnnouncement(): si pasa ownership, ejecuta soft delete.
+ *   Por eso se cubre un camino por predicado relevante, aislando la BD con un
+ *   repositorio falso y observando errores o acciones del servicio.
  *
  * NODOS/PREDICADOS principales:
  *   P1 requireRepresentative(): existe/no existe representante para la seccion.
@@ -108,6 +119,13 @@ const expectHttpError = async (action: Promise<unknown>, statusCode: number, cod
 };
 
 describe("CAJA BLANCA · HU10 SectionManagementService", () => {
+  /*
+   * C1 - Camino feliz de createAnnouncement().
+   * Entrada que fuerza el camino: studentId=100 tiene representacion valida en
+   * sectionId=20 y el repositorio devuelve el anuncio creado.
+   * Validacion: el servicio debe usar el sectionRepresentativeId autenticado
+   * (7), no un id recibido desde el cliente.
+   */
   test("C1: delegado valido crea anuncio con el sectionRepresentativeId autenticado", async () => {
     let capturedRepresentativeId = 0;
     const service = new SectionManagementService(
@@ -129,6 +147,13 @@ describe("CAJA BLANCA · HU10 SectionManagementService", () => {
     expect(result.anuncio.id).toBe("50");
   });
 
+  /*
+   * C2 - Rama negativa de requireRepresentative().
+   * Entrada que fuerza el camino: el repositorio responde null al buscar la
+   * representacion del alumno en la seccion.
+   * Validacion: el servicio corta el flujo antes de crear y retorna el error de
+   * permisos SECTION_FORBIDDEN.
+   */
   test("C2: alumno sin representacion no puede crear anuncios en la seccion", async () => {
     const service = new SectionManagementService(
       makeRepo({ findRepresentativeAccess: async () => null }),
@@ -142,6 +167,13 @@ describe("CAJA BLANCA · HU10 SectionManagementService", () => {
     );
   });
 
+  /*
+   * C3 - Rama de recuperacion fallida luego de crear.
+   * Entrada que fuerza el camino: createAnnouncement devuelve un id, pero
+   * findAnnouncementById no encuentra la fila creada.
+   * Validacion: el servicio no inventa una respuesta incompleta; devuelve
+   * ANNOUNCEMENT_CREATE_FAILED.
+   */
   test("C3: si el anuncio creado no se recupera, retorna ANNOUNCEMENT_CREATE_FAILED", async () => {
     const service = new SectionManagementService(
       makeRepo({ findAnnouncementById: async () => null }),
@@ -155,6 +187,13 @@ describe("CAJA BLANCA · HU10 SectionManagementService", () => {
     );
   });
 
+  /*
+   * C4 - Rama negativa de requireAnnouncementOwner().
+   * Entrada que fuerza el camino: el anuncio existe, pero pertenece a otro
+   * studentId.
+   * Validacion: editar anuncios ajenos queda bloqueado con
+   * ANNOUNCEMENT_FORBIDDEN.
+   */
   test("C4: editar anuncio de otro alumno esta prohibido", async () => {
     const service = new SectionManagementService(
       makeRepo({ findAnnouncementOwnership: async () => ownership({ studentId: 200 }) }),
@@ -168,6 +207,13 @@ describe("CAJA BLANCA · HU10 SectionManagementService", () => {
     );
   });
 
+  /*
+   * C5 - Camino feliz de deleteAnnouncement().
+   * Entrada que fuerza el camino: el anuncio existe, esta activo y pertenece al
+   * alumno autenticado.
+   * Validacion: el servicio ejecuta soft delete sobre el id exacto del anuncio
+   * y devuelve mensaje de eliminacion.
+   */
   test("C5: borrar anuncio propio invoca soft delete exactamente sobre ese id", async () => {
     const deletedIds: number[] = [];
     const service = new SectionManagementService(

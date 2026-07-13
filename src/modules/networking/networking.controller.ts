@@ -1,6 +1,6 @@
 import type { Context } from "hono";
-import { validateJson } from "../../shared/middleware/validate-dto.js";
-import { updateNetworkingSchema } from "./networking.schemas.js";
+import { validateJson, validateParams } from "../../shared/middleware/validate-dto.js";
+import { updateNetworkingSchema, userParamsSchema } from "./networking.schemas.js";
 import type { NetworkingService } from "./networking.service.js";
 
 export class NetworkingController {
@@ -18,7 +18,7 @@ export class NetworkingController {
   }
 
   async getVisibleByUserId(c: Context) {
-    const userId = Number(c.req.param("userId"));
+    const { userId } = validateParams(c, userParamsSchema);
     return c.json(await this.service.getVisibleByUserId(userId));
   }
 }

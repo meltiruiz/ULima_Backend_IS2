@@ -6,6 +6,10 @@ import {
 } from "./networking.logic.js";
 import { SOCIAL_PLATFORMS } from "./networking.types.js";
 
+export const userParamsSchema = z.object({
+  userId: z.coerce.number().int().positive(),
+});
+
 export const socialLinkSchema = z
   .object({
     platform: z.enum(SOCIAL_PLATFORMS),

@@ -1,6 +1,11 @@
 import { asc, eq, sql } from "drizzle-orm";
 import type { db } from "../../db/index.js";
 import { appUser, userSocialLink } from "../../db/schema/index.js";
+import {
+  mapNetworkingCardRows,
+  mapPublicNetworkingCardRows,
+  type PublicNetworkingCardRow,
+} from "./networking.mapper.js";
 import type { NetworkingCard, PublicNetworkingCard, SocialLink } from "./networking.types.js";
 
 export class NetworkingRepository {
@@ -25,14 +30,7 @@ export class NetworkingRepository {
     const owner = rows[0];
     if (!owner) return null;
 
-    return {
-      optIn: Boolean(owner.optIn),
-      links: rows.flatMap((row) =>
-        row.platform == null || row.url == null
-          ? []
-          : [{ platform: row.platform, url: row.url, label: row.label }],
-      ),
-    };
+    return mapNetworkingCardRows(owner, rows);
   }
 
   async replaceByUserId(
@@ -99,36 +97,11 @@ export class NetworkingRepository {
       left join user_social_link usl on usl.user_id = au.id
       where au.id = ${userId}
       order by usl.id
-    `) as unknown as Array<{
-      user_id: number;
-      code: string;
-      full_name: string;
-      networking_opt_in: boolean;
-      career_name: string | null;
-      teacher_id: number | null;
-      role_label: string;
-      platform: SocialLink["platform"] | null;
-      url: string | null;
-      label: string | null;
-    }>;
+    `) as unknown as PublicNetworkingCardRow[];
 
     const owner = rows[0];
     if (!owner) return null;
 
-    return {
-      optIn: Boolean(owner.networking_opt_in),
-      links: rows.flatMap((row) =>
-        row.platform == null || row.url == null
-          ? []
-          : [{ platform: row.platform, url: row.url, label: row.label }],
-      ),
-      owner: {
-        userId: Number(owner.user_id),
-        fullName: owner.full_name,
-        primaryDetail: owner.career_name ?? "",
-        secondaryDetail: `${owner.code} - ${owner.role_label}`,
-        roleLabel: owner.role_label,
-      },
-    };
+    return mapPublicNetworkingCardRows(owner, rows);
   }
 }

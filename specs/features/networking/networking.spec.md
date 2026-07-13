@@ -60,7 +60,8 @@ una columna de enlace destacado ni se cambia la base de datos.
   el body no acepta identificadores de usuario.
 - La escritura reemplaza atómicamente el conjunto de enlaces y el opt-in dentro
   de una transacción.
-- `optIn: true` exige exactamente un enlace.
+- `optIn: true` acepta cero o un enlace. El carnet puede estar visible sin red
+  registrada para compartir solo la identidad institucional.
 - `optIn: false` acepta cero o un enlace. Enviar el enlace actual junto con
   `optIn: false` lo conserva oculto; enviar `links: []` lo elimina
   explícitamente.
@@ -94,14 +95,24 @@ una columna de enlace destacado ni se cambia la base de datos.
   enviar el mismo elemento con `optIn: false`.
 - PostgreSQL es la única fuente de verdad. No se usan JSON, mocks persistentes,
   seeds ni el antiguo `teacher.linkedin_link`.
+- Se aplica **Mapper Pattern** para convertir filas SQL a `NetworkingCard` y
+  `PublicNetworkingCard`; el mapper no valida permisos ni consulta BD.
 - Se respeta la arquitectura
   `routes -> controller -> service -> repository`, con lógica pura separada,
   Zod y `HttpError`.
   `[@test] ../../../test/networking.service.test.ts`
 
+### R-NET-5 - Carnet publico visible
+
+- `GET /networking/users/:userId` permite consultar el carnet publico de otro
+  usuario autenticado desde contactos o chat.
+- Si el usuario oculto su carnet (`networking_opt_in = false`), responde
+  `403 NETWORKING_CARD_HIDDEN`.
+- La respuesta incluye `{ optIn, links, owner }`, donde `owner` expone nombre,
+  detalle principal, detalle secundario y rol visible.
+
 ## Fuera de alcance
 
-- `GET /networking/users/:userId` y la vista pública desde contactos.
 - Compartir el carnet en Firebase/chat de sección.
 - QR, descarga, directorio global, conexiones o mensajería nueva.
 - Más de una red guardada o una red destacada.

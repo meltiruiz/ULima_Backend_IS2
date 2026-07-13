@@ -24,11 +24,19 @@ import {
  * Campos de entrada observados desde API:
  *   optIn, links[], platform, url, label.
  *
+ * La funcionalidad involucra mas de 4 campos de entrada porque el endpoint
+ * `PUT /networking/me` recibe un objeto con:
+ *   1) optIn
+ *   2) links
+ *   3) links[0].platform
+ *   4) links[0].url
+ *   5) links[0].label
+ *
  * TABLA DE PARTICION DE EQUIVALENCIA + VALORES LIMITE:
  * | Caso | Clase evaluada                         | Entrada representativa                         | Esperado |
  * |------|----------------------------------------|------------------------------------------------|----------|
  * | CV1  | carnet visible sin enlaces             | optIn=true, links=[]                           | valido   |
- * | CV2  | carnet visible con una red valida      | github con espacios alrededor de la URL        | valido y trim |
+ * | CV2  | carnet visible con una red valida      | website con url y label con espacios           | valido y trim |
  * | CNV1 | cantidad de redes fuera del limite     | dos enlaces en links[]                         | invalido |
  * | CNV2 | protocolo de URL no permitido          | ftp://github.com/a                             | invalido |
  * | CNV3 | dominio no coincide con la plataforma  | linkedin apuntando a example.com               | invalido |
@@ -40,20 +48,46 @@ import {
  */
 
 describe("CAJA NEGRA · HU25 updateNetworkingSchema", () => {
+  /*
+   * CV1 - Clase valida: carnet visible sin red social.
+   * Entrada: optIn=true y links=[].
+   * Resultado esperado: payload valido porque la HU25 permite compartir el
+   * carnet aunque el usuario no haya registrado una red.
+   */
   test("CV1: carnet visible sin enlace es valido", () => {
     expect(updateNetworkingSchema.safeParse({ optIn: true, links: [] }).success).toBe(true);
   });
 
+  /*
+   * CV2 - Clase valida con mas de 4 campos de entrada.
+   * Entrada: optIn, links, platform, url y label. Se agregan espacios para
+   * comprobar el contrato externo de normalizacion.
+   * Resultado esperado: payload valido y strings normalizados por trim.
+   */
   test("CV2: carnet visible con una red valida normaliza espacios", () => {
     const parsed = updateNetworkingSchema.safeParse({
       optIn: true,
-      links: [{ platform: "github", url: "  https://github.com/mel  " }],
+      links: [{
+        platform: "website",
+        url: "  https://mel.dev  ",
+        label: "  Portfolio  ",
+      }],
     });
 
     expect(parsed.success).toBe(true);
-    if (parsed.success) expect(parsed.data.links[0].url).toBe("https://github.com/mel");
+    if (parsed.success) {
+      expect(parsed.data.links[0].platform).toBe("website");
+      expect(parsed.data.links[0].url).toBe("https://mel.dev");
+      expect(parsed.data.links[0].label).toBe("Portfolio");
+    }
   });
 
+  /*
+   * CNV1 - Clase invalida por limite de cantidad.
+   * Entrada: links[] contiene dos redes sociales.
+   * Resultado esperado: payload invalido porque el carnet admite como maximo
+   * una red.
+   */
   test("CNV1: no acepta mas de una red", () => {
     expect(updateNetworkingSchema.safeParse({
       optIn: true,
@@ -64,14 +98,32 @@ describe("CAJA NEGRA · HU25 updateNetworkingSchema", () => {
     }).success).toBe(false);
   });
 
+  /*
+   * CNV2 - Clase invalida por protocolo.
+   * Entrada: url absoluta con protocolo ftp.
+   * Resultado esperado: payload invalido; solo se aceptan http:// o https://.
+   */
   test("CNV2: rechaza protocolo distinto de HTTP(S)", () => {
     expect(socialLinkSchema.safeParse({ platform: "github", url: "ftp://github.com/a" }).success).toBe(false);
   });
 
+  /*
+   * CNV3 - Clase invalida por dominio/plataforma.
+   * Entrada: platform=linkedin pero url apunta a example.com.
+   * Resultado esperado: payload invalido porque la URL no pertenece al dominio
+   * esperado para LinkedIn.
+   */
   test("CNV3: rechaza dominio que no corresponde a la plataforma", () => {
     expect(socialLinkSchema.safeParse({ platform: "linkedin", url: "https://example.com/in/a" }).success).toBe(false);
   });
 
+  /*
+   * CNV4 - Clase invalida/valida para etiqueta.
+   * Entrada invalida: website sin label.
+   * Entrada valida: other con label visible.
+   * Resultado esperado: website/other requieren una etiqueta para que el carnet
+   * muestre un nombre entendible de la red.
+   */
   test("CNV4: website y other requieren label", () => {
     expect(socialLinkSchema.safeParse({ platform: "website", url: "https://mel.dev" }).success).toBe(false);
     expect(socialLinkSchema.safeParse({ platform: "other", url: "https://mel.dev", label: "Portfolio" }).success).toBe(true);

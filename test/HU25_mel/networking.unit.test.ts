@@ -1,87 +1,118 @@
 /*
-  bun test/HU25_mel/networking.unit.test.ts
+  bun test test/HU25_mel/networking.unit.test.ts
 */
 import { describe, expect, test } from "bun:test";
-import {
-  isHttpUrl,
-  normalizeSocialLink,
-  urlBelongsToPlatform,
-  validateNetworkingSelection,
-  validateSocialLink,
-} from "../../src/modules/networking/networking.logic.js";
+import { validateSocialLink } from "../../src/modules/networking/networking.logic.js";
 
 /**
  * ============================================================================
- * PRUEBAS UNITARIAS - Logica pura de carnet networking (HU25)
+ * PRUEBA UNITARIA - Metodo validateSocialLink() (HU25)
  * Fuente: src/modules/networking/networking.logic.ts
  * ============================================================================
  * Objetivo:
- *   Probar funciones pequenas y aisladas que sostienen las reglas del carnet
- *   de networking. No se instancia servidor, no se usa HTTP y no se toca la BD.
+ *   Validar un unico metodo puro que decide si una red social del carnet es
+ *   aceptable antes de persistirla. No se instancia servidor, no se usa HTTP y
+ *   no se toca la BD.
  *
  * Criterio de aceptacion relacionado:
- *   El carnet funciona como opt-in: puede estar visible sin una red asignada,
- *   acepta solo enlaces seguros y limita la seleccion a una red social.
+ *   El carnet permite registrar como maximo una red valida. Cada red debe usar
+ *   URL http/https, corresponder al dominio esperado de su plataforma, y para
+ *   `website` / `other` debe incluir una etiqueta visible.
  *
- * Funciones bajo prueba:
- *   isHttpUrl()
- *   urlBelongsToPlatform()
- *   validateSocialLink()
- *   validateNetworkingSelection()
- *   normalizeSocialLink()
+ * Metodo bajo prueba:
+ *   validateSocialLink(link)
  *
- * TABLA DE CASOS UNITARIOS:
- * | Caso | Funcion / regla                         | Entrada representativa                     | Esperado |
- * |------|------------------------------------------|--------------------------------------------|----------|
- * | U1   | isHttpUrl                                | http/https, ftp, texto plano               | solo http/https valido |
- * | U2   | urlBelongsToPlatform                     | linkedin oficial, dominio parecido falso   | dominio oficial valido |
- * | U3   | validateSocialLink                       | website sin label, other con label         | label requerido |
- * | U4   | validateNetworkingSelection              | optIn=true, links=[]                       | valido sin red |
- * | U5   | validateNetworkingSelection              | dos redes sociales                         | too_many_links |
- * | U6   | normalizeSocialLink                      | url con espacios y label vacio             | trim y label null |
+ * CASOS UNITARIOS DEL MISMO METODO:
+ * | Caso | Entrada                                           | Esperado          |
+ * |------|---------------------------------------------------|-------------------|
+ * | U1   | github con https y dominio oficial                | ok                |
+ * | U2   | github con protocolo ftp                          | invalid_url       |
+ * | U3   | linkedin apuntando a example.com                  | invalid_domain    |
+ * | U4   | website sin label                                 | label_required    |
+ * | U5   | website con label solo espacios                   | label_required    |
+ * | U6   | other con label visible                           | ok                |
  *
  * Alcance:
- *   Estas pruebas explican reglas atomicas. Para exposicion se pueden tomar U1
- *   a U4 como las cuatro unitarias principales, y dejar U5-U6 como respaldo.
+ *   Esta es la prueba unitaria exigida por rubrica: un metodo concreto con al
+ *   menos 4 casos de prueba que validan su funcionamiento correcto.
  */
 
-describe("UNITARIA · HU25 networking.logic", () => {
-  test("caso 1: isHttpUrl acepta http/https y rechaza ftp/texto", () => {
-    expect(isHttpUrl("https://github.com/mel")).toBe(true);
-    expect(isHttpUrl("http://mel.dev")).toBe(true);
-    expect(isHttpUrl("ftp://github.com/mel")).toBe(false);
-    expect(isHttpUrl("mel")).toBe(false);
-  });
-
-  test("caso 2: dominios oficiales aceptan subdominios", () => {
-    expect(urlBelongsToPlatform("linkedin", "https://www.linkedin.com/in/mel")).toBe(true);
-    expect(urlBelongsToPlatform("github", "https://evilgithub.com/mel")).toBe(false);
-  });
-
-  test("caso 3: website/other requieren label", () => {
-    expect(validateSocialLink({ platform: "website", url: "https://mel.dev" }).status).toBe("label_required");
-    expect(validateSocialLink({ platform: "other", url: "https://mel.dev", label: "Blog" }).status).toBe("ok");
-  });
-
-  test("caso 4: seleccion con cero links es valida para compartir carnet sin red", () => {
-    expect(validateNetworkingSelection({ optIn: true, links: [] }).status).toBe("ok");
-  });
-
-  test("caso 5: seleccion con dos links retorna too_many_links", () => {
-    expect(validateNetworkingSelection({
-      optIn: true,
-      links: [
-        { platform: "github", url: "https://github.com/a" },
-        { platform: "instagram", url: "https://instagram.com/a" },
-      ],
-    }).status).toBe("too_many_links");
-  });
-
-  test("caso 6: normalizeSocialLink recorta url y label vacio queda null", () => {
-    expect(normalizeSocialLink({
+describe("UNITARIA · HU25 validateSocialLink()", () => {
+  /*
+   * U1 - Caso valido base.
+   * Entrada: plataforma github con URL https y dominio oficial github.com.
+   * Resultado esperado: validateSocialLink retorna status "ok".
+   */
+  test("U1: acepta plataforma con URL https y dominio oficial", () => {
+    expect(validateSocialLink({
       platform: "github",
-      url: "  https://github.com/mel  ",
+      url: "https://github.com/mel",
+    }).status).toBe("ok");
+  });
+
+  /*
+   * U2 - Caso invalido por URL.
+   * Entrada: plataforma github con URL ftp://.
+   * Resultado esperado: status "invalid_url" porque el metodo solo admite
+   * enlaces http o https.
+   */
+  test("U2: rechaza URL sin protocolo HTTP(S)", () => {
+    expect(validateSocialLink({
+      platform: "github",
+      url: "ftp://github.com/mel",
+    }).status).toBe("invalid_url");
+  });
+
+  /*
+   * U3 - Caso invalido por dominio.
+   * Entrada: plataforma linkedin con dominio example.com.
+   * Resultado esperado: status "invalid_domain" porque el dominio no coincide
+   * con la plataforma seleccionada.
+   */
+  test("U3: rechaza URL cuyo dominio no corresponde a la plataforma", () => {
+    expect(validateSocialLink({
+      platform: "linkedin",
+      url: "https://example.com/in/mel",
+    }).status).toBe("invalid_domain");
+  });
+
+  /*
+   * U4 - Caso invalido por ausencia de label.
+   * Entrada: platform=website con URL valida pero sin label.
+   * Resultado esperado: status "label_required" porque website necesita una
+   * etiqueta visible para mostrarse en el carnet.
+   */
+  test("U4: website sin label retorna label_required", () => {
+    expect(validateSocialLink({
+      platform: "website",
+      url: "https://mel.dev",
+    }).status).toBe("label_required");
+  });
+
+  /*
+   * U5 - Caso invalido por label vacio.
+   * Entrada: platform=website con label compuesto solo por espacios.
+   * Resultado esperado: status "label_required" porque luego del trim no queda
+   * texto util.
+   */
+  test("U5: website con label vacio tras trim retorna label_required", () => {
+    expect(validateSocialLink({
+      platform: "website",
+      url: "https://mel.dev",
       label: "   ",
-    })).toEqual({ platform: "github", url: "https://github.com/mel", label: null });
+    }).status).toBe("label_required");
+  });
+
+  /*
+   * U6 - Caso valido para plataforma generica.
+   * Entrada: platform=other, URL http/https valida y label visible.
+   * Resultado esperado: status "ok" porque cumple la regla especial de label.
+   */
+  test("U6: other con label visible es valido", () => {
+    expect(validateSocialLink({
+      platform: "other",
+      url: "https://mel.dev",
+      label: "Portfolio",
+    }).status).toBe("ok");
   });
 });

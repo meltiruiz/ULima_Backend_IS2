@@ -18,17 +18,25 @@ const student = (over: Partial<RawContactStudentRow> = {}): RawContactStudentRow
   code: "20230001",
   full_name: "Ramos Silva Marco",
   institutional_email: "20230001@aloe.ulima.edu.pe",
+  networking_opt_in: false,
   career_id: 2,
   position: null,
+  platform: null,
+  url: null,
+  label: null,
   ...over,
 });
 
 const serviceWith = (students: RawContactStudentRow[]) =>
   new CourseDetailService(
     {
+      findSections: async () => [],
+      findTeachers: async () => [],
+      findEnrollments: async () => [],
       findAnnouncementsBySectionId: async () => [],
-      findContactTeacherBySectionId: async () => null,
-      findContactStudentsBySectionId: async () => students,
+      findContactTeacherRowsBySectionId: async () => [],
+      findContactJpRowsBySectionId: async () => [],
+      findContactStudentRowsBySectionId: async () => students,
     } as unknown as CourseDetailRepository,
     noopEvents,
   );

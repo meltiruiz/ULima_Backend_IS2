@@ -17,13 +17,7 @@ export class NetworkingService {
     const card = await this.repository.findByUserId(userId);
     if (!card) throw new HttpError(404, "Usuario no encontrado.", "USER_NOT_FOUND");
 
-    if (card.links.length > 1) {
-      throw new HttpError(
-        500,
-        "El carnet contiene más de una red social.",
-        "NETWORKING_DATA_INTEGRITY",
-      );
-    }
+    this.ensureSingleLink(card, "El carnet contiene más de una red social.");
 
     return card;
   }
@@ -67,14 +61,14 @@ export class NetworkingService {
       );
     }
 
-    if (card.links.length > 1) {
-      throw new HttpError(
-        500,
-        "El carnet contiene mas de una red social.",
-        "NETWORKING_DATA_INTEGRITY",
-      );
-    }
+    this.ensureSingleLink(card, "El carnet contiene mas de una red social.");
 
     return card;
+  }
+
+  private ensureSingleLink(card: NetworkingCard, message: string) {
+    if (card.links.length > 1) {
+      throw new HttpError(500, message, "NETWORKING_DATA_INTEGRITY");
+    }
   }
 }

@@ -21,6 +21,7 @@ Esta spec recupera el alcance original de representantes y lo complementa con:
 
 - Se sigue la arquitectura del backend: `routes -> controller -> service -> repository -> db`.
 - Se aplica **Repository Pattern** para encapsular consultas a `announcement`, `section_representative`, `enrollment`, `student` y `app_user`.
+- Se aplica **Mapper Pattern** para convertir filas de gestion de anuncios (`AnnouncementRow`) al contrato HTTP (`AnnouncementResponse`). El mapper solo transforma datos: no valida permisos, no consulta BD y no decide reglas de negocio.
 - Se aplica **Service Layer** para reglas de negocio: autorización por sección, ownership de anuncios y soft delete.
 - Se usa validación DTO con **Zod** en `section-management.schemas.ts`.
 - No se agregan observers/eventos reales en `src/events` porque la spec no define efectos secundarios.
