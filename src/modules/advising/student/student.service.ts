@@ -29,9 +29,9 @@ export class StudentService {
     readonly events: EventBus,
   ) {}
 
-  async getAdvising(sectionId: number, studentId?: number): Promise<AdvisingResult> {
+  // `now` es inyectable para tests deterministas (default: la hora real).
+  async getAdvising(sectionId: number, studentId?: number, now: Date = new Date()): Promise<AdvisingResult> {
     const rows = await this.repository.findBySection(sectionId, studentId);
-    const now = new Date();
 
     const asesorias = rows
       .map((row) => {
