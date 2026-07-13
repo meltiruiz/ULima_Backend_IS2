@@ -82,8 +82,8 @@ export class SectionManagementService {
     sectionId: number,
   ): Promise<AnnouncementsResult> {
     try {
-      await this.requireRepresentative(studentId, sectionId);
-      const rows = await this.repository.findAnnouncementsBySection(sectionId);
+      const representative = await this.requireRepresentative(studentId, sectionId);
+      const rows = await this.repository.findAnnouncementsByRepresentative(representative.id);
       return { anuncios: rows.map((row) => this.mapAnnouncement(row)) };
     } catch (e) {
       throw this.wrap(e, "getAnnouncements");
