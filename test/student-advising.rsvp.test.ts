@@ -207,7 +207,11 @@ describe("StudentService.getAdvising", () => {
       noopEvents,
     );
 
-    const { asesorias } = await service.getAdvising(1, 6);
+    // `now` fijo: sábado 2026-07-11 14:00 Lima. Así la recurrente de sábado que
+    // termina 09:00 SÍ es pasada (mismo día, ya pasó su hora) de forma determinista,
+    // sin depender del día en que se corra el test.
+    const sabadoTarde = new Date("2026-07-11T14:00:00-05:00");
+    const { asesorias } = await service.getAdvising(1, 6, sabadoTarde);
     expect(asesorias.length).toBe(0);
   });
 });

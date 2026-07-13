@@ -1,4 +1,11 @@
-import { describe, expect, test, mock, beforeEach } from "bun:test";
+import { describe, expect, test, mock, beforeEach, afterAll } from "bun:test";
+
+// Los mock.module de Bun son GLOBALES y persisten entre archivos de test. Sin
+// esto, el mock de chat-search.js de abajo se filtra a chatbot.chat-search.test.ts
+// (que prueba las funciones reales) y lo rompe. Restauramos al terminar el archivo.
+afterAll(() => {
+  mock.restore();
+});
 
 const saveMessageCalls: Array<{ sessionId: string; role: string; content: string }> = [];
 const searchChatCalls: Array<{ question: string }> = [];
@@ -62,20 +69,20 @@ const fakeScheduleService = {
   getAssessments: async () => ({ assessments: [] }),
 } as any;
 
-mock.module("../src/modules/chatbot/chat-search.js", () => ({
-  searchChatMessages: async (question: string) => {
-    searchChatCalls.push({ question });
-    return [
-      {
-        sectionName: "INGENIERÍA DE SOFTWARE II (856)",
-        messages: [
-          { senderName: "Profesor", body: "Si se puede usar apuntes", createdAt: 1 },
-        ],
-      },
-    ];
-  },
-  filterSections: () => [{ sectionId: 1, courseName: "INGENIERÍA DE SOFTWARE II", sectionCode: "856" }],
-}));
+// Stub de searchChatMessages INYECTADO por constructor (ver ChatbotService), en
+// vez de mock.module(chat-search.js) — ese mock es global en Bun y se filtraba a
+// chatbot.chat-search.test.ts rompiéndolo.
+const stubSearchChat = async (question: string, _sections: unknown) => {
+  searchChatCalls.push({ question });
+  return [
+    {
+      sectionName: "INGENIERÍA DE SOFTWARE II (856)",
+      messages: [
+        { senderName: "Profesor", body: "Si se puede usar apuntes", createdAt: 1 },
+      ],
+    },
+  ];
+};
 
 const { ChatbotService } = await import("../src/modules/chatbot/chatbot.service.js");
 
@@ -86,7 +93,7 @@ describe("ChatbotService.ask - el chat se consulta SIEMPRE", () => {
   });
 
   test("pregunta que NO tiene keyword de chat (solo 'examen') -> igual consulta el chat", async () => {
-    const service = new ChatbotService(fakeRepo, fakeScheduleService);
+    const service = new ChatbotService(fakeRepo, fakeScheduleService, stubSearchChat);
     await service.ask("s1", 2, {
       question: "se pueden usar apuntes? escritos a mano en el examen de SoftWare II?",
     });
@@ -96,7 +103,7 @@ describe("ChatbotService.ask - el chat se consulta SIEMPRE", () => {
   });
 
   test("pregunta con keyword de chat explicito -> consulta el chat", async () => {
-    const service = new ChatbotService(fakeRepo, fakeScheduleService);
+    const service = new ChatbotService(fakeRepo, fakeScheduleService, stubSearchChat);
     await service.ask("s1", 2, {
       question: "dijeron algo del examen en el grupo?",
     });
@@ -105,7 +112,7 @@ describe("ChatbotService.ask - el chat se consulta SIEMPRE", () => {
   });
 
   test("pregunta sobre horario -> el chat tambien se consulta", async () => {
-    const service = new ChatbotService(fakeRepo, fakeScheduleService);
+    const service = new ChatbotService(fakeRepo, fakeScheduleService, stubSearchChat);
     await service.ask("s1", 2, {
       question: "que clases tengo el lunes?",
     });
