@@ -14,5 +14,5 @@ export const gradesRoutes = createGradesRoutes(gradesController);
 export { GradesController } from "./grades.controller.js";
 export { GradesRepository } from "./grades.repository.js";
 export { GradesService } from "./grades.service.js";
-export { upsertStudentScoreSchema } from "./grades.schemas.js";
-export type { GradeValue } from "./grades.types.js";
+export { calculateAverageSchema, saveNotasSchema } from "./grades.schemas.js";
+export type { GradeValue, NotaInput, CalculateAverageResponse, SaveNotasRequest, LoadNotasResponse } from "./grades.types.js";

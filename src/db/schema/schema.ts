@@ -265,8 +265,10 @@ export const courseOffering = pgTable("course_offering", {
   id: integer("id").generatedByDefaultAsIdentity().primaryKey(),
   academicPeriodId: integer("academic_period_id").notNull().references(() => academicPeriod.id),
   courseId: integer("course_id").notNull().references(() => course.id),
+  totalHours: decimal("total_hours", { precision: 5, scale: 2 }).notNull().default("0"),
 }, (t) => ({
   uqCourseOffering: unique("uq_course_offering").on(t.academicPeriodId, t.courseId),
+  chkCourseOfferingTotalHours: check("chk_course_offering_total_hours", sql`${t.totalHours} >= 0`),
   idxCourseOfferingPeriod: index("idx_course_offering_period").on(t.academicPeriodId),
 }));
 

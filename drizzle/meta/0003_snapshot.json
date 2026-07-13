@@ -1317,6 +1317,13 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true
+        },
+        "total_hours": {
+          "name": "total_hours",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
         }
       },
       "indexes": {
@@ -1376,7 +1383,12 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "chk_course_offering_total_hours": {
+          "name": "chk_course_offering_total_hours",
+          "value": "\"course_offering\".\"total_hours\" >= 0"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.course_prerequisite": {
