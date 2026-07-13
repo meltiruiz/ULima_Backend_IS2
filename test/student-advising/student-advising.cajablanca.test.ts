@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { Context } from "hono";
-import { StudentController } from "../src/modules/advising/student/student.controller.js";
-import { StudentService } from "../src/modules/advising/student/student.service.js";
-import type { StudentRepository } from "../src/modules/advising/student/student.repository.js";
-import type { EventBus } from "../src/events/index.js";
-import type { RawAdvisingRow } from "../src/modules/advising/student/student.types.js";
+import { StudentController } from "../../src/modules/advising/student/student.controller.js";
+import { StudentService } from "../../src/modules/advising/student/student.service.js";
+import type { StudentRepository } from "../../src/modules/advising/student/student.repository.js";
+import type { EventBus } from "../../src/events/index.js";
+import type { RawAdvisingRow } from "../../src/modules/advising/student/student.types.js";
 
 const noopEvents = {} as unknown as EventBus;
 
@@ -38,15 +38,11 @@ const buildRow = (over: Partial<RawAdvisingRow> = {}): RawAdvisingRow => ({
   ...over,
 });
 
-// `now` fijo para los tests de mapeo: martes 2026-07-14. La fila por defecto es una
-// asesoría RECURRENTE de lunes (day_of_week: 1); con un martes como referencia nunca
-// cuenta como "pasada", así el test es determinista y no depende de cuándo se corra
-// (antes fallaba si se corría un lunes después de las 11:00).
 const NOW_REF = new Date("2026-07-14T12:00:00-05:00");
 
 const fakeCtx = (params: Record<string, string>, vars: Record<string, unknown>): Context =>
   ({
-    req: { param: () => params },
+    req: { param: (k?: string) => (k ? params[k] : params) },
     get: (k: string) => vars[k],
     json: (body: unknown) => body,
   }) as unknown as Context;
@@ -166,7 +162,7 @@ describe("StudentService.cancelRsvp", () => {
   });
 });
 
-describe("StudentService.getAdvising", () => {
+describe("StudentService.getAdvising — mapeo y filtrado", () => {
   test("mapea my_rsvp=true → myRsvp=true", async () => {
     let seenStudentId: number | undefined = -1;
     const service = new StudentService(
@@ -213,12 +209,137 @@ describe("StudentService.getAdvising", () => {
       noopEvents,
     );
 
-    // `now` fijo: sábado 2026-07-11 14:00 Lima. Así la recurrente de sábado que
-    // termina 09:00 SÍ es pasada (mismo día, ya pasó su hora) de forma determinista,
-    // sin depender del día en que se corra el test.
     const sabadoTarde = new Date("2026-07-11T14:00:00-05:00");
     const { asesorias } = await service.getAdvising(1, 6, sabadoTarde);
     expect(asesorias.length).toBe(0);
+  });
+});
+
+describe("StudentService.getAdvising — mapeo de campos del docente (splitName)", () => {
+  test("full_name con coma: 'Quintana Cruz, Hernan' separa apellidos y nombre", async () => {
+    const service = new StudentService(
+      fakeRepo({
+        findBySection: async () => [buildRow({ full_name: "Quintana Cruz, Hernan", teacher_code: "hquintan" })],
+      }),
+      noopEvents,
+    );
+    const { asesorias } = await service.getAdvising(1, undefined, NOW_REF);
+    expect(asesorias[0].docente.firstName).toBe("Hernan");
+    expect(asesorias[0].docente.lastName).toBe("Quintana Cruz");
+    expect(asesorias[0].docenteCode).toBe("hquintan");
+  });
+
+  test("full_name con 4 tokens: los 2 primeros son apellidos", async () => {
+    const service = new StudentService(
+      fakeRepo({
+        findBySection: async () => [buildRow({ full_name: "Garcia Lopez Carlos Maria", teacher_code: "carlosg" })],
+      }),
+      noopEvents,
+    );
+    const { asesorias } = await service.getAdvising(1, undefined, NOW_REF);
+    expect(asesorias[0].docente.lastName).toBe("Garcia Lopez");
+    expect(asesorias[0].docente.firstName).toBe("Carlos Maria");
+  });
+
+  test("full_name con 2 tokens: primero apellido, segundo nombre", async () => {
+    const service = new StudentService(
+      fakeRepo({
+        findBySection: async () => [buildRow({ full_name: "Quintana Hernan", teacher_code: "hquin" })],
+      }),
+      noopEvents,
+    );
+    const { asesorias } = await service.getAdvising(1, undefined, NOW_REF);
+    expect(asesorias[0].docente.lastName).toBe("Quintana");
+    expect(asesorias[0].docente.firstName).toBe("Hernan");
+  });
+
+  test("full_name con 1 token: es nombre, apellido vacío", async () => {
+    const service = new StudentService(
+      fakeRepo({
+        findBySection: async () => [buildRow({ full_name: "Hernan", teacher_code: "h001" })],
+      }),
+      noopEvents,
+    );
+    const { asesorias } = await service.getAdvising(1, undefined, NOW_REF);
+    expect(asesorias[0].docente.firstName).toBe("Hernan");
+    expect(asesorias[0].docente.lastName).toBe("");
+  });
+});
+
+describe("StudentService.getAdvising — mapeo de día (dayName)", () => {
+  test("day_of_week 1 = Lunes", async () => {
+    const service = new StudentService(
+      fakeRepo({ findBySection: async () => [buildRow({ day_of_week: 1 })] }),
+      noopEvents,
+    );
+    const { asesorias } = await service.getAdvising(1, undefined, NOW_REF);
+    expect(asesorias[0].dia).toBe("Lunes");
+  });
+
+  test("day_of_week 7 = Domingo", async () => {
+    const service = new StudentService(
+      fakeRepo({ findBySection: async () => [buildRow({ day_of_week: 7 })] }),
+      noopEvents,
+    );
+    const { asesorias } = await service.getAdvising(1, undefined, NOW_REF);
+    expect(asesorias[0].dia).toBe("Domingo");
+  });
+
+  test("day_of_week fuera de rango → 'Por definir'", async () => {
+    const service = new StudentService(
+      fakeRepo({ findBySection: async () => [buildRow({ day_of_week: 99 })] }),
+      noopEvents,
+    );
+    const { asesorias } = await service.getAdvising(1, undefined, NOW_REF);
+    expect(asesorias[0].dia).toBe("Por definir");
+  });
+});
+
+describe("StudentService.getAdvising — sesiones no pasadas incluidas", () => {
+  test("extra con fecha futura → incluida", async () => {
+    const service = new StudentService(
+      fakeRepo({
+        findBySection: async () => [
+          buildRow({ id: 1, kind: "extra", session_date: "2026-12-25" }),
+        ],
+      }),
+      noopEvents,
+    );
+    const { asesorias } = await service.getAdvising(1, undefined, NOW_REF);
+    expect(asesorias.length).toBe(1);
+  });
+
+  test("recurrente en día distinto al actual → incluida", async () => {
+    const service = new StudentService(
+      fakeRepo({
+        findBySection: async () => [
+          buildRow({ id: 2, kind: "recurring", day_of_week: 3, end_time: "11:00" }),
+        ],
+      }),
+      noopEvents,
+    );
+    // NOW_REF es martes (day 2), la recurrente es miércoles (day 3)
+    const { asesorias } = await service.getAdvising(1, undefined, NOW_REF);
+    expect(asesorias.length).toBe(1);
+  });
+});
+
+describe("StudentService.getAdvising — studentId opcional", () => {
+  test("sin studentId (undefined) → no falla y myRsvp = false", async () => {
+    let seenStudentId: number | undefined = -1;
+    const service = new StudentService(
+      fakeRepo({
+        findBySection: async (_sectionId: number, studentId?: number) => {
+          seenStudentId = studentId;
+          return [buildRow({ my_rsvp: true, asistentes: 3 })];
+        },
+      }),
+      noopEvents,
+    );
+    const { asesorias } = await service.getAdvising(1, undefined, NOW_REF);
+    expect(seenStudentId).toBeUndefined();
+    expect(asesorias[0].myRsvp).toBe(true);
+    expect(asesorias[0].asistentes).toBe(3);
   });
 });
 

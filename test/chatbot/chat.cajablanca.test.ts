@@ -1,12 +1,10 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { ChatController } from "../src/modules/chat/chat.controller.js";
-import type { ChatRepository } from "../src/modules/chat/chat.repository.js";
-import { buildParticipant } from "../src/modules/chat/chat.logic.js";
-import type { ChatParticipant } from "../src/modules/chat/chat.types.js";
-import { firebaseService } from "../src/services/firebase.service.js";
+import { ChatController } from "../../src/modules/chat/chat.controller.js";
+import type { ChatRepository } from "../../src/modules/chat/chat.repository.js";
+import { buildParticipant } from "../../src/modules/chat/chat.logic.js";
+import type { ChatParticipant } from "../../src/modules/chat/chat.types.js";
+import { firebaseService } from "../../src/services/firebase.service.js";
 
-// Stub de Firebase: no queremos tocar la RTDB ni firmar tokens reales en la
-// suite. Guardamos lo escrito en /members para poder verificarlo.
 let mirrored: ChatParticipant[] = [];
 firebaseService.upsertChatMember = async (p: ChatParticipant) => {
   mirrored.push(p);
@@ -16,7 +14,6 @@ firebaseService.generateCustomToken = async (
   claims: Record<string, unknown> = {},
 ) => `token:${uid}:${claims.role}:${claims.weight}`;
 
-// Stub del borrado suave: registra la llamada y controla si el mensaje "existe".
 let softDeletes: Array<{ sectionId: number; messageId: string; patch: unknown }> = [];
 let softDeleteExists = true;
 firebaseService.softDeleteChatMessage = async (
@@ -28,7 +25,6 @@ firebaseService.softDeleteChatMessage = async (
   return { existed: softDeleteExists };
 };
 
-// Repositorio falso: devuelve participantes canónicos sin tocar Postgres.
 const fakeRepo = (over: Partial<ChatRepository>): ChatRepository =>
   ({
     findStudentParticipant: async () => null,
@@ -191,7 +187,7 @@ describe("ChatController.createFirebaseToken — autorización (caja blanca)", (
     await expectForbidden(() =>
       c.createFirebaseToken({
         sectionId: 1,
-        userId: 999, // no coincide con student.userId (6)
+        userId: 999,
         role: "student",
         studentId: 6,
       }),
@@ -224,7 +220,6 @@ describe("ChatController.createFirebaseToken — éxito", () => {
     expect(res.weight).toBe(100);
     expect(res.uid).toBe("292");
     expect(res.token).toBe("token:292:teacher:100");
-    // el backend es el ÚNICO que escribe el espejo, antes de firmar el token
     expect(mirrored).toHaveLength(1);
     expect(mirrored[0]!.userId).toBe(292);
   });

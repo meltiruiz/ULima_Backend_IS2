@@ -1,5 +1,5 @@
 import { describe, expect, test, mock, beforeEach } from "bun:test";
-import { filterSections, searchChatMessages } from "../src/modules/chatbot/chat-search.js";
+import { filterSections } from "../../src/modules/chatbot/chat-search.js";
 
 const SECTIONS = [
   { sectionId: 1, courseName: "INGENIERÍA DE SOFTWARE II", sectionCode: "856" },
@@ -41,49 +41,39 @@ describe("filterSections - chat search", () => {
   });
 });
 
-describe("searchChatMessages - lectura completa sin rerank", () => {
+describe("searchChatMessages - lectura completa", () => {
   beforeEach(() => {
     mock.restore();
   });
 
-  test("devuelve TODOS los mensajes leídos (no top-K), sin llamar a rerank", async () => {
+  test("devuelve TODOS los mensajes leídos (no top-K)", async () => {
     const fakeMessages = [
       { id: "m0", senderName: "A", body: "Hola", createdAt: 1 },
       { id: "m1", senderName: "B", body: "Se puede usar apuntes en el examen?", createdAt: 2 },
       { id: "m2", senderName: "C", body: "Miau miau", createdAt: 3 },
     ];
 
-    let rerankCalled = false;
-    mock.module("../src/services/firebase.service.js", () => ({
+    mock.module("../../src/services/firebase.service.js", () => ({
       firebaseService: { getRecentMessages: async () => fakeMessages },
     }));
-    mock.module("../src/services/cohere.client.js", () => ({
-      cohereClient: {
-        rerank: async () => { rerankCalled = true; return []; },
-      },
-    }));
 
-    const { searchChatMessages: search } = await import("../src/modules/chatbot/chat-search.js");
+    const { searchChatMessages: search } = await import("../../src/modules/chatbot/chat-search.js");
     const results = await search(
       "Se puede usar apuntes en el examen de software? lo han dicho por el grupo?",
       [{ sectionId: 1, courseName: "INGENIERIA DE SOFTWARE II", sectionCode: "856" }],
     );
 
-    expect(rerankCalled).toBe(false);
     expect(results.length).toBe(1);
     expect(results[0].messages.length).toBe(3);
     expect(results[0].messages[1].body).toBe("Se puede usar apuntes en el examen?");
   });
 
   test("sección sin mensajes: no agrega resultado", async () => {
-    mock.module("../src/services/firebase.service.js", () => ({
+    mock.module("../../src/services/firebase.service.js", () => ({
       firebaseService: { getRecentMessages: async () => [] },
     }));
-    mock.module("../src/services/cohere.client.js", () => ({
-      cohereClient: { rerank: async () => [] },
-    }));
 
-    const { searchChatMessages: search } = await import("../src/modules/chatbot/chat-search.js");
+    const { searchChatMessages: search } = await import("../../src/modules/chatbot/chat-search.js");
     const results = await search(
       "qué se dijo en el chat?",
       [{ sectionId: 1, courseName: "INGENIERIA DE SOFTWARE II", sectionCode: "856" }],
@@ -93,7 +83,7 @@ describe("searchChatMessages - lectura completa sin rerank", () => {
   });
 
   test("error de firebase: continua con la siguiente sección, no rompe", async () => {
-    mock.module("../src/services/firebase.service.js", () => ({
+    mock.module("../../src/services/firebase.service.js", () => ({
       firebaseService: {
         getRecentMessages: async (sectionId: number) => {
           if (sectionId === 1) throw new Error("firebase down");
@@ -103,11 +93,8 @@ describe("searchChatMessages - lectura completa sin rerank", () => {
         },
       },
     }));
-    mock.module("../src/services/cohere.client.js", () => ({
-      cohereClient: { rerank: async () => [] },
-    }));
 
-    const { searchChatMessages: search } = await import("../src/modules/chatbot/chat-search.js");
+    const { searchChatMessages: search } = await import("../../src/modules/chatbot/chat-search.js");
     const results = await search(
       "qué se dijo?",
       [

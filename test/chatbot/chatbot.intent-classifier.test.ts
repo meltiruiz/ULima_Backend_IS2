@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { classifyByKeywords } from "../src/modules/chatbot/intent-classifier.js";
+import { classifyByKeywords } from "../../src/modules/chatbot/intent-classifier.js";
 
 describe("classifyByKeywords - chat intent", () => {
   test("'Han dicho algo del examen en el grupo de software?' incluye chat", () => {
