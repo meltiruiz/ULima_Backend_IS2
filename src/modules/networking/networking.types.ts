@@ -26,6 +26,16 @@ export type NetworkingCard = {
   links: SocialLink[];
 };
 
+export type PublicNetworkingCard = NetworkingCard & {
+  owner: {
+    userId: number;
+    fullName: string;
+    primaryDetail: string;
+    secondaryDetail: string;
+    roleLabel: string;
+  };
+};
+
 export type UpdateNetworkingRequest = {
   optIn: boolean;
   links: SocialLinkInput[];

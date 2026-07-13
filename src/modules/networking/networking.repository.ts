@@ -1,7 +1,7 @@
 import { asc, eq, sql } from "drizzle-orm";
 import type { db } from "../../db/index.js";
 import { appUser, userSocialLink } from "../../db/schema/index.js";
-import type { NetworkingCard, SocialLink } from "./networking.types.js";
+import type { NetworkingCard, PublicNetworkingCard, SocialLink } from "./networking.types.js";
 
 export class NetworkingRepository {
   constructor(readonly database: typeof db) {}
@@ -73,5 +73,62 @@ export class NetworkingRepository {
         links: link ? [link] : [],
       };
     });
+  }
+
+  async findPublicByUserId(userId: number): Promise<PublicNetworkingCard | null> {
+    const rows = await this.database.execute(sql`
+      select
+        au.id as user_id,
+        au.code,
+        au.full_name,
+        au.networking_opt_in,
+        c.name as career_name,
+        t.id as teacher_id,
+        case
+          when t.id is null then 'Alumno'
+          when exists (select 1 from section sec where sec.jp_id = t.id) then 'Jefe de Practica'
+          else 'Docente'
+        end as role_label,
+        usl.platform,
+        usl.url,
+        usl.label
+      from app_user au
+      left join student st on st.user_id = au.id
+      left join career c on c.id = st.career_id
+      left join teacher t on t.user_id = au.id
+      left join user_social_link usl on usl.user_id = au.id
+      where au.id = ${userId}
+      order by usl.id
+    `) as unknown as Array<{
+      user_id: number;
+      code: string;
+      full_name: string;
+      networking_opt_in: boolean;
+      career_name: string | null;
+      teacher_id: number | null;
+      role_label: string;
+      platform: SocialLink["platform"] | null;
+      url: string | null;
+      label: string | null;
+    }>;
+
+    const owner = rows[0];
+    if (!owner) return null;
+
+    return {
+      optIn: Boolean(owner.networking_opt_in),
+      links: rows.flatMap((row) =>
+        row.platform == null || row.url == null
+          ? []
+          : [{ platform: row.platform, url: row.url, label: row.label }],
+      ),
+      owner: {
+        userId: Number(owner.user_id),
+        fullName: owner.full_name,
+        primaryDetail: owner.career_name ?? "",
+        secondaryDetail: `${owner.code} - ${owner.role_label}`,
+        roleLabel: owner.role_label,
+      },
+    };
   }
 }

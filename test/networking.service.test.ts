@@ -2,13 +2,24 @@ import { describe, expect, test } from "bun:test";
 import type { EventBus } from "../src/events/index.js";
 import type { NetworkingRepository } from "../src/modules/networking/networking.repository.js";
 import { NetworkingService } from "../src/modules/networking/networking.service.js";
-import type { NetworkingCard } from "../src/modules/networking/networking.types.js";
+import type { NetworkingCard, PublicNetworkingCard } from "../src/modules/networking/networking.types.js";
 
 const noopEvents = {} as unknown as EventBus;
 
 const fakeRepo = (over: Partial<NetworkingRepository> = {}): NetworkingRepository =>
   ({
     findByUserId: async () => ({ optIn: false, links: [] }),
+    findPublicByUserId: async () => ({
+      optIn: true,
+      links: [],
+      owner: {
+        userId: 7,
+        fullName: "Alumna Test",
+        primaryDetail: "Ingenieria",
+        secondaryDetail: "20230000 - Alumno",
+        roleLabel: "Alumno",
+      },
+    }),
     replaceByUserId: async (_userId: number, optIn: boolean, link: NetworkingCard["links"][number] | null) => ({
       optIn,
       links: link ? [link] : [],
@@ -26,6 +37,49 @@ const expectHttpError = async (fn: () => Promise<unknown>, status: number, code:
     expect(actual.code).toBe(code);
   }
 };
+
+describe("NetworkingService.getVisibleByUserId", () => {
+  test("devuelve el carnet publico cuando sigue visible", async () => {
+    const visible: PublicNetworkingCard = {
+      optIn: true,
+      links: [{ platform: "github", url: "https://github.com/a", label: null }],
+      owner: {
+        userId: 7,
+        fullName: "Alumna Test",
+        primaryDetail: "Ingenieria",
+        secondaryDetail: "20230000 - Alumno",
+        roleLabel: "Alumno",
+      },
+    };
+    const service = new NetworkingService(fakeRepo({
+      findPublicByUserId: async () => visible,
+    }), noopEvents);
+
+    expect(await service.getVisibleByUserId(7)).toEqual(visible);
+  });
+
+  test("si el usuario oculto el carnet responde 403", async () => {
+    const service = new NetworkingService(fakeRepo({
+      findPublicByUserId: async () => ({
+        optIn: false,
+        links: [],
+        owner: {
+          userId: 7,
+          fullName: "Alumna Test",
+          primaryDetail: "Ingenieria",
+          secondaryDetail: "20230000 - Alumno",
+          roleLabel: "Alumno",
+        },
+      }),
+    }), noopEvents);
+
+    await expectHttpError(
+      () => service.getVisibleByUserId(7),
+      403,
+      "NETWORKING_CARD_HIDDEN",
+    );
+  });
+});
 
 describe("NetworkingService.getMine", () => {
   test("el propietario lee el enlace aunque el carnet esté oculto", async () => {

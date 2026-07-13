@@ -148,19 +148,33 @@ export const createCourseDetailRoutes = (controller: CourseDetailController) => 
     const sectionId = Number(c.req.param("sectionId"));
     try {
       const teacherRows = await db.execute(sql`
-        select t.teacher_code, t.full_name
+        select
+          t.teacher_code,
+          t.full_name,
+          au.networking_opt_in,
+          usl.platform,
+          usl.url,
+          usl.label
         from section sec
         join teacher t on t.id = sec.teacher_id
+        left join app_user au on au.id = t.user_id
+        left join user_social_link usl on usl.user_id = au.id
         where sec.id = ${sectionId}
-        limit 1
       `) as unknown as Array<any>;
       // HU18: jefe de práctica de la sección (0 o 1).
       const jpRows = await db.execute(sql`
-        select t.teacher_code, t.full_name
+        select
+          t.teacher_code,
+          t.full_name,
+          au.networking_opt_in,
+          usl.platform,
+          usl.url,
+          usl.label
         from section sec
         join teacher t on t.id = sec.jp_id
+        left join app_user au on au.id = t.user_id
+        left join user_social_link usl on usl.user_id = au.id
         where sec.id = ${sectionId}
-        limit 1
       `) as unknown as Array<any>;
       const rows = await db.execute(sql`
         select
@@ -168,46 +182,73 @@ export const createCourseDetailRoutes = (controller: CourseDetailController) => 
           au.code,
           au.full_name,
           au.institutional_email,
+          au.networking_opt_in,
           s.career_id,
-          sr.position
+          sr.position,
+          usl.platform,
+          usl.url,
+          usl.label
         from enrollment e
         join student s on s.id = e.student_id
         join app_user au on au.id = s.user_id
+        left join user_social_link usl on usl.user_id = au.id
         left join section_representative sr on sr.enrollment_id = e.id and sr.is_active = true
         where e.section_id = ${sectionId}
         order by au.full_name
       `) as unknown as Array<any>;
 
+      const networkingFromRows = (items: Array<any>) => ({
+        optIn: Boolean(items[0]?.networking_opt_in),
+        links: items
+          .filter((item) => item.platform != null && item.url != null)
+          .slice(0, 1)
+          .map((item) => ({
+            platform: item.platform,
+            url: item.url,
+            label: item.label ?? null,
+          })),
+      });
+
+      const mapTeacherContact = (items: Array<any>) =>
+        items[0]
+          ? {
+              code: items[0].teacher_code ?? "",
+              ...splitName(items[0].full_name),
+              networking: networkingFromRows(items),
+            }
+          : null;
+
+      const studentsByEnrollment = new Map<number, Array<any>>();
+      for (const row of rows) {
+        const current = studentsByEnrollment.get(row.enrollment_id) ?? [];
+        current.push(row);
+        studentsByEnrollment.set(row.enrollment_id, current);
+      }
+
       return c.json({
-        docente: teacherRows[0]
-          ? {
-              code: teacherRows[0].teacher_code ?? "",
-              ...splitName(teacherRows[0].full_name),
-            }
-          : null,
+        docente: mapTeacherContact(teacherRows),
         // HU18: grupo "Jefe de Práctica" (entre Docente y Alumnos). null si la sección no tiene JP.
-        jefePractica: jpRows[0]
-          ? {
-              code: jpRows[0].teacher_code ?? "",
-              ...splitName(jpRows[0].full_name),
-            }
-          : null,
-        alumnos: rows.map((row) => ({
-          user: {
-            code: row.code,
-            ...splitName(row.full_name),
-            email: row.institutional_email,
-            role: row.position === "delegate" ? "delegado" : row.position === "subdelegate" ? "subdelegado" : "estudiante",
-            career_id: row.career_id,
-            currentCycle: "2026-1",
-            setupComplete: true,
-          },
-          roleInSection: row.position === "delegate" ? "delegado" : row.position === "subdelegate" ? "subdelegado" : "estudiante",
-        })),
+        jefePractica: mapTeacherContact(jpRows),
+        alumnos: Array.from(studentsByEnrollment.values()).map((studentRows) => {
+          const row = studentRows[0];
+          return {
+            user: {
+              code: row.code,
+              ...splitName(row.full_name),
+              email: row.institutional_email,
+              role: row.position === "delegate" ? "delegado" : row.position === "subdelegate" ? "subdelegado" : "estudiante",
+              career_id: row.career_id,
+              currentCycle: "2026-1",
+              setupComplete: true,
+            },
+            roleInSection: row.position === "delegate" ? "delegado" : row.position === "subdelegate" ? "subdelegado" : "estudiante",
+            networking: networkingFromRows(studentRows),
+          };
+        }),
       });
     } catch (e) {
       console.error(`DB Error in /sections/${sectionId}/contacts`, e);
-      return c.json({ docente: null, alumnos: [] });
+      return c.json({ docente: null, jefePractica: null, alumnos: [] });
     }
   });
 

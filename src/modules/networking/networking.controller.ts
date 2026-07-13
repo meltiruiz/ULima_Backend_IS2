@@ -16,4 +16,9 @@ export class NetworkingController {
     const body = await validateJson(c, updateNetworkingSchema);
     return c.json(await this.service.updateMine(userId, body));
   }
+
+  async getVisibleByUserId(c: Context) {
+    const userId = Number(c.req.param("userId"));
+    return c.json(await this.service.getVisibleByUserId(userId));
+  }
 }
