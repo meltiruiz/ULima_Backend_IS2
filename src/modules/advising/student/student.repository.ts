@@ -11,41 +11,38 @@ export class StudentRepository {
       ? sql`exists(select 1 from advising_rsvp r where r.advising_session_id = cas.id and r.student_id = ${studentId})`
       : sql`false`;
 
-    try {
-      return (await this.database.execute(sql`
-        select
-          cas.id,
-          cas.course_offering_id,
-          cas.section_id,
-          cas.day_of_week,
-          cas.start_time,
-          cas.end_time,
-          cas.classroom,
-          cas.meeting_url,
-          cas.kind,
-          cas.session_date::text as session_date,
-          t.teacher_code,
-          t.full_name,
-          case when cas.teacher_id = sec.jp_id then 'JP' else 'Profesor' end as dictante_rol,
-          (select count(*)::int from advising_rsvp r where r.advising_session_id = cas.id) as asistentes,
-          ${myRsvpExpr} as my_rsvp
-        from course_advising_session cas
-        join teacher t on t.id = cas.teacher_id
-        join section sec on sec.course_offering_id = cas.course_offering_id
-        where sec.id = ${sectionId}
-          and (cas.section_id is null or cas.section_id = ${sectionId})
-          and (
-            cas.kind = 'recurring'
-            or cas.kind = 'extra'
-          )
-        order by
-          case when cas.kind = 'extra' then 0 else 1 end,
-          cas.session_date nulls last, cas.day_of_week, cas.start_time
-      `)) as unknown as RawAdvisingRow[];
-    } catch (e) {
-      console.error(`DB Error in findBySection(${sectionId})`, e);
-      return [];
-    }
+    // Sin catch de rescate: un fallo de BD se propaga (500 real) en vez de
+    // simular una lista de asesorías vacía. Ver docs/AUDITORIA_TECNICA.md §6.1.
+    return (await this.database.execute(sql`
+      select
+        cas.id,
+        cas.course_offering_id,
+        cas.section_id,
+        cas.day_of_week,
+        cas.start_time,
+        cas.end_time,
+        cas.classroom,
+        cas.meeting_url,
+        cas.kind,
+        cas.session_date::text as session_date,
+        t.teacher_code,
+        t.full_name,
+        case when cas.teacher_id = sec.jp_id then 'JP' else 'Profesor' end as dictante_rol,
+        (select count(*)::int from advising_rsvp r where r.advising_session_id = cas.id) as asistentes,
+        ${myRsvpExpr} as my_rsvp
+      from course_advising_session cas
+      join teacher t on t.id = cas.teacher_id
+      join section sec on sec.course_offering_id = cas.course_offering_id
+      where sec.id = ${sectionId}
+        and (cas.section_id is null or cas.section_id = ${sectionId})
+        and (
+          cas.kind = 'recurring'
+          or cas.kind = 'extra'
+        )
+      order by
+        case when cas.kind = 'extra' then 0 else 1 end,
+        cas.session_date nulls last, cas.day_of_week, cas.start_time
+    `)) as unknown as RawAdvisingRow[];
   }
 
   async findSessionById(sessionId: number): Promise<SessionLike | null> {

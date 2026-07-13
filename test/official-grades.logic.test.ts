@@ -8,7 +8,7 @@ const noopEvents = {} as unknown as EventBus;
 const fakeRepo = (over: Partial<OfficialGradesRepository>): OfficialGradesRepository =>
   ({
     findActivePeriodId: async () => 1,
-    teacherOwnsSection: async () => true,
+    teacherIsSectionProfesor: async () => true,
     findTeacherSections: async () => [],
     findSectionStudents: async () => [],
     findSectionAssessments: async () => [],
@@ -32,11 +32,12 @@ const expectHttpError = async (fn: () => Promise<unknown>, status: number, code:
 };
 
 describe("OfficialGradesService.saveSectionScores", () => {
-  test("docente ajeno a la sección ⇒ 403 y no escribe", async () => {
+  test("docente que NO es el profesor titular (p.ej. un JP) ⇒ 403 y no escribe", async () => {
     let upserts = 0;
     const service = new OfficialGradesService(
       fakeRepo({
-        teacherOwnsSection: async () => false,
+        // teacherIsSectionProfesor=false representa a un JP (u otro docente): no califica.
+        teacherIsSectionProfesor: async () => false,
         upsertScore: async () => {
           upserts += 1;
         },
@@ -46,7 +47,7 @@ describe("OfficialGradesService.saveSectionScores", () => {
     await expectHttpError(
       () => service.saveSectionScores(9, 1, [{ enrollmentId: 5, assessmentId: 10, value: 15 }]),
       403,
-      "NOT_SECTION_TEACHER",
+      "NOT_SECTION_PROFESSOR",
     );
     expect(upserts).toBe(0);
   });
@@ -55,7 +56,7 @@ describe("OfficialGradesService.saveSectionScores", () => {
     let upserts = 0;
     const service = new OfficialGradesService(
       fakeRepo({
-        teacherOwnsSection: async () => true,
+        teacherIsSectionProfesor: async () => true,
         findSectionEnrollmentIds: async () => new Set([5]),
         findSectionAssessmentIds: async () => new Set([10]),
         upsertScore: async () => {
@@ -123,8 +124,8 @@ describe("OfficialGradesService.saveSectionScores", () => {
 
 describe("OfficialGradesService.getSectionGrid", () => {
   test("docente ajeno ⇒ 403", async () => {
-    const service = new OfficialGradesService(fakeRepo({ teacherOwnsSection: async () => false }), noopEvents);
-    await expectHttpError(() => service.getSectionGrid(9, 1), 403, "NOT_SECTION_TEACHER");
+    const service = new OfficialGradesService(fakeRepo({ teacherIsSectionProfesor: async () => false }), noopEvents);
+    await expectHttpError(() => service.getSectionGrid(9, 1), 403, "NOT_SECTION_PROFESSOR");
   });
 });
 
