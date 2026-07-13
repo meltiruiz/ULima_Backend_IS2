@@ -33,6 +33,7 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "^9.6.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/bun": "latest",
     "@types/jsonwebtoken": "^9.0.7",

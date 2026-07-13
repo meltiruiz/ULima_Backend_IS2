@@ -45,3 +45,7 @@ coverage/
 # Backups de BD: NUNCA versionar (contienen hashes y datos de producción)
 backup_*.sql
 *.dump
+
+# Mutation testing (Stryker)
+.stryker-tmp/
+reports/

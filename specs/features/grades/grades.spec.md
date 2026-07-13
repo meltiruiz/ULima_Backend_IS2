@@ -42,3 +42,5 @@ Bajo `Authorization: Bearer <token>` (rol alumno):
 ## Test Links
 
 - [grades.logic.test.ts](../../../test/grades.logic.test.ts) — Tests del cálculo puro
+- [promedio.unitarias.test.ts](../../../test/HU07_aurelio/promedio.unitarias.test.ts) — Unitarias HU07: `calcularPromedioPonderado`, `sumaDePesos` y validación Zod de `POST /grades/me/calculate` (BR-GRADES-04)
+- [notas.cajablanca.test.ts](../../../test/HU06_aurelio/notas.cajablanca.test.ts) — Caja blanca HU06: caminos de `saveNotas`/`deleteNota` con repositorio espía (BR-GRADES-03, rama sin matrícula)
