@@ -323,27 +323,16 @@ Notas:
 - `student_score` es la tabla de persistencia de notas personales del alumno.
 - El cálculo de promedio ponderado se delega al backend vía `POST /grades/me/calculate`.
 - Ya no existe `NotasService` en el frontend: toda la lógica de almacenamiento y cálculo está en el backend.
-- **Arquitectura real (HU06/HU07)**: el backend `grades` es **solo lectura** (`GET /grades/me/courses`) y el **cálculo del promedio ponderado ocurre en el frontend** (calculadora). El **guardado de las notas del alumno** ahora se **persiste en el backend** vía `simulated-grades` (ver sección) — antes solo vivía en `shared_preferences`. El promedio se sigue calculando en el cliente.
+- **Arquitectura real (HU06/HU07, actualizada 2026-07-12)**: la calculadora vive en el módulo `grades`: `GET /grades/me/courses` (cursos+evaluaciones del sílabo), `GET/POST /grades/me/notes` (persiste las notas del alumno en la tabla `simulated_grades`; antes en `shared_preferences`), `DELETE /grades/me/notes/:sectionId/:assessmentId`, y `POST /grades/me/calculate` (promedio ponderado calculado en el **backend**).
 - `student_score` existe en el esquema (notas seed de referencia); la app no lo escribe. Las notas de la calculadora van a `simulated_grades`.
 - Los endpoints `PUT /grades/me/scores` y `.../average` quedaron documentados pero **nunca se implementaron**; se listan como no implementados para que el contrato refleje la realidad.
 - `POST /grades/syllabi` queda fuera de v1 salvo spec aprobada; la tabla `syllabus` ya existe.
 
-## Simulated Grades
-
-Notas SIMULADAS que el propio alumno ingresa en la calculadora, persistidas en la tabla `simulated_grades` (una fila por `enrollment_id` + `assessment_id`, `value` 0..20). Todas requieren JWT de alumno (`STUDENT_ROLES`); el `studentId` sale del token. El backend valida que cada `assessmentId` pertenezca a un curso donde el alumno está matriculado (deriva `enrollment` de `studentId`+`assessmentId`); si no, `404 ASSESSMENT_NOT_ENROLLED`.
-
-- `GET /simulated-grades/me` — **IMPLEMENTADO**. Lista las notas simuladas del alumno.
-  - Response: `{ "grades": [{ "assessmentId": number, "sectionId": number, "value": number }] }`
-- `PUT /simulated-grades/me` — **IMPLEMENTADO**. Upsert por lote (guarda varias notas de un curso a la vez).
-  - Body: `{ "grades": [{ "assessmentId": number, "value": number }] }` (1..200, `value` 0..20)
-  - Response: `{ "grades": [{ "assessmentId": number, "sectionId": number, "value": number }] }` (lista vigente completa)
-  - Errores: `404 ASSESSMENT_NOT_ENROLLED` si alguna evaluación no corresponde a una matrícula del alumno (no persiste parcialmente).
-- `DELETE /simulated-grades/me/:assessmentId` — **IMPLEMENTADO**. Borra la nota simulada del alumno para esa evaluación.
-  - Response: `{ "message": "Simulated grade removed" }`; `404 SIMULATED_GRADE_NOT_FOUND` si no existía; `400 INVALID_ASSESSMENT_ID` si el param no es entero positivo.
+> **Nota (2026-07-12):** el módulo `simulated-grades` (`/simulated-grades/*`) fue **eliminado** — quedó redundante. Las notas de la calculadora se guardan por `POST /grades/me/notes` (mismo destino: tabla `simulated_grades`). La tabla sigue existiendo.
 
 ## Official Grades
 
-Notas **oficiales** que el profesor/JP carga por evaluación, en `student_score`. La **nota final** = promedio ponderado (Σ nota×peso/100), calculada en el cliente. Distinto de `simulated-grades` (notas no oficiales del alumno).
+Notas **oficiales** que el profesor/JP carga por evaluación, en `student_score`. La **nota final** = promedio ponderado (Σ nota×peso/100). Distinto de las notas **no oficiales** de la calculadora del alumno (tabla `simulated_grades`, vía `/grades/me/notes`).
 
 Docente (`requireRole("teacher")`, `teacherId` del JWT; solo secciones propias vía `section.teacher_id`/`jp_id`):
 
