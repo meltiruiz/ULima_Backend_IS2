@@ -30,6 +30,16 @@ export class AdvisingService {
     }
   }
 
+  /** Ruta pública: asesorías de una sección para alumnos y docentes. */
+  async getSessionsBySection(sectionId: number, studentId?: number) {
+    try {
+      const asesorias = await this.repository.findSessionsBySection(sectionId, studentId);
+      return { asesorias };
+    } catch (e) {
+      throw this.wrap(e, "getSessionsBySection");
+    }
+  }
+
   async createSession(teacherId: number, body: CreateAdvisingBody) {
     try {
       const period = await this.repository.getActivePeriod();

@@ -21,3 +21,8 @@ export type CreateAdvisingBody = z.infer<typeof createAdvisingSchema>;
 export const advisingIdParamSchema = z.object({
   id: z.coerce.number().int().positive(),
 });
+
+/** Param :sectionId de la ruta pública GET /section/:sectionId. */
+export const sectionIdParamSchema = z.object({
+  sectionId: z.coerce.number().int().positive(),
+});

@@ -253,4 +253,106 @@ export class AdvisingRepository {
     `)) as unknown as Array<{ code: string; full_name: string }>;
     return rows.map((r) => ({ code: r.code, ...splitName(r.full_name) }));
   }
+
+
+  /**
+   * Asesorías de una sección visibles para cualquier usuario autenticado
+   * (alumnos y docentes). Incluye datos del docente anidados para el frontend.
+   * Cuando se pasa `studentId` se agrega `myRsvp` real.
+   */
+  async findSessionsBySection(
+    sectionId: number,
+    studentId?: number,
+  ) {
+    type SectionSessionRow = SessionRow & {
+      teacher_code: string;
+      teacher_full_name: string;
+      course_offering_id_num: number;
+    };
+
+    const rows = (await this.database.execute(sql`
+      select
+        cas.id,
+        cas.section_id,
+        cas.course_offering_id,
+        c.name as course_name,
+        sec.code as section_code,
+        cas.kind,
+        cas.day_of_week,
+        cas.session_date::text as session_date,
+        cas.start_time::text as start_time,
+        cas.end_time::text as end_time,
+        cas.modality,
+        cas.classroom,
+        cas.meeting_url,
+        cas.note,
+        cas.capacity,
+        case when sec.jp_id = cas.teacher_id then 'JP' else 'Profesor' end as rol,
+        (select count(*)::int from advising_rsvp r where r.advising_session_id = cas.id) as asistentes,
+        au.code as teacher_code,
+        au.full_name as teacher_full_name
+      from course_advising_session cas
+      join course_offering co on co.id = cas.course_offering_id
+      join course c on c.id = co.course_id
+      left join section sec on sec.id = cas.section_id
+      join app_user au on au.id = cas.teacher_id
+      where cas.section_id = ${sectionId}
+      order by case when cas.kind = 'extra' then 0 else 1 end,
+               cas.session_date nulls last, cas.day_of_week, cas.start_time
+    `)) as unknown as SectionSessionRow[];
+
+    // Resolver myRsvp en batch si es alumno.
+    const rsvpSet = new Set<number>();
+    if (studentId && rows.length > 0) {
+      const ids = rows.map((r) => Number(r.id));
+      const rsvpRows = (await this.database.execute(sql`
+        select r.advising_session_id
+        from advising_rsvp r
+        join student st on st.id = r.student_id
+        where st.id = ${studentId}
+          and r.advising_session_id = any(array[${sql.raw(ids.join(','))}])
+      `)) as unknown as Array<{ advising_session_id: number }>;
+      for (const rr of rsvpRows) rsvpSet.add(Number(rr.advising_session_id));
+    }
+
+    // Partir full_name en firstName / lastName.
+    const splitFull = (fullName: string) => {
+      if (fullName.includes(",")) {
+        const parts = fullName.split(",");
+        return { lastName: parts[0].trim(), firstName: parts.slice(1).join(",").trim() };
+      }
+      const parts = fullName.trim().split(/\s+/);
+      if (parts.length > 2) return { lastName: parts.slice(0, 2).join(" "), firstName: parts.slice(2).join(" ") };
+      if (parts.length === 2) return { lastName: parts[0], firstName: parts[1] };
+      return { firstName: fullName, lastName: "" };
+    };
+
+    return rows.map((r) => {
+      const { firstName, lastName } = splitFull(r.teacher_full_name ?? "");
+      return {
+        id: Number(r.id),
+        courseId: Number(r.course_offering_id),
+        docenteCode: r.teacher_code ?? "",
+        sectionId: r.section_id == null ? null : Number(r.section_id),
+        courseOfferingId: Number(r.course_offering_id),
+        courseName: r.course_name,
+        sectionCode: r.section_code,
+        kind: r.kind,
+        dia: dayName(Number(r.day_of_week)),
+        fecha: r.session_date,
+        inicio: hhmm(r.start_time),
+        fin: hhmm(r.end_time),
+        modality: r.modality,
+        aula: r.classroom ?? "",
+        zoom: r.meeting_url ?? "",
+        nota: r.note ?? "",
+        cupo: r.capacity == null ? null : Number(r.capacity),
+        asistentes: Number(r.asistentes),
+        dictanteRol: r.rol,
+        docente: { code: r.teacher_code ?? "", firstName, lastName },
+        myRsvp: rsvpSet.has(Number(r.id)),
+      };
+    });
+  }
 }
+

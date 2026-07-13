@@ -26,5 +26,5 @@ export const registerModules = (app: Hono) => {
   app.route("/section-management", sectionManagementRoutes);
   app.route("/advising", advisingRoutes);
   app.route("/chat", chatRoutes);
-  app.route("/course-detail", attendanceRiskRoutes);
+  app.route("/attendance-risk", attendanceRiskRoutes);
 };
