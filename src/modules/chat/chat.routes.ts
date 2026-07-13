@@ -6,7 +6,7 @@ import { HttpError } from "../../shared/errors/http-error.js";
 import type { ChatController } from "./chat.controller.js";
 import { chatTokenSchema } from "./chat.schemas.js";
 
-const deleteParamsSchema = z.object({
+export const deleteParamsSchema = z.object({
   sectionId: z.coerce.number().int().positive(),
   messageId: z.string().min(1).max(200),
 });

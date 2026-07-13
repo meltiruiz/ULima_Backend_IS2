@@ -6,11 +6,11 @@ import {
   roleLabel,
   roleWeight,
   studentRoleFromPosition,
-} from "../src/modules/chat/chat.logic.js";
+} from "../../src/modules/chat/chat.logic.js";
 import type {
   ChatParticipant,
   ChatParticipantRole,
-} from "../src/modules/chat/chat.types.js";
+} from "../../src/modules/chat/chat.types.js";
 
 const ROLES: ChatParticipantRole[] = [
   "teacher",

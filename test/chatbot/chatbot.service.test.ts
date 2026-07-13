@@ -1,8 +1,5 @@
 import { describe, expect, test, mock, beforeEach, afterAll } from "bun:test";
 
-// Los mock.module de Bun son GLOBALES y persisten entre archivos de test. Sin
-// esto, el mock de chat-search.js de abajo se filtra a chatbot.chat-search.test.ts
-// (que prueba las funciones reales) y lo rompe. Restauramos al terminar el archivo.
 afterAll(() => {
   mock.restore();
 });
@@ -10,7 +7,7 @@ afterAll(() => {
 const saveMessageCalls: Array<{ sessionId: string; role: string; content: string }> = [];
 const searchChatCalls: Array<{ question: string }> = [];
 
-mock.module("../src/services/cohere.client.js", () => ({
+mock.module("../../src/services/cohere.client.js", () => ({
   cohereClient: {
     classify: async () => [
       {
@@ -69,9 +66,6 @@ const fakeScheduleService = {
   getAssessments: async () => ({ assessments: [] }),
 } as any;
 
-// Stub de searchChatMessages INYECTADO por constructor (ver ChatbotService), en
-// vez de mock.module(chat-search.js) — ese mock es global en Bun y se filtraba a
-// chatbot.chat-search.test.ts rompiéndolo.
 const stubSearchChat = async (question: string, _sections: unknown) => {
   searchChatCalls.push({ question });
   return [
@@ -84,7 +78,7 @@ const stubSearchChat = async (question: string, _sections: unknown) => {
   ];
 };
 
-const { ChatbotService } = await import("../src/modules/chatbot/chatbot.service.js");
+const { ChatbotService } = await import("../../src/modules/chatbot/chatbot.service.js");
 
 describe("ChatbotService.ask - el chat se consulta SIEMPRE", () => {
   beforeEach(() => {

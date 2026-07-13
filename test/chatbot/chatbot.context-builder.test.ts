@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildContext } from "../src/modules/chatbot/context-builder.js";
+import { buildContext } from "../../src/modules/chatbot/context-builder.js";
 
 describe("buildContext - bloque del chat", () => {
   test("incluye mensajes del chat aunque el intent NO sea 'chat' (BR-CB-06)", () => {

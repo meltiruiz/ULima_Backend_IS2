@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isSessionPast } from "../src/modules/advising/student/student.logic.js";
+import { isSessionPast } from "../../src/modules/advising/student/student.logic.js";
 
 function makeNow(limaDateStr: string, limaTimeStr: string): Date {
   const ms = Date.UTC(
