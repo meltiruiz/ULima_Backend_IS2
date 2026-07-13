@@ -30,6 +30,12 @@ import type { StudentNotifyRow } from "../../src/modules/attendance-risk/attenda
  * | C4| P4(F): en_riesgo a 2 faltas   | alerta "Estás a 2 falta(s)…" exacta         |
  * | C5| mixto (C1+C2+C3+C4 juntos)    | createAlerts recibe EXACTAMENTE 2 alertas   |
  * | C6| P6 singular: 1 notificado     | "Se ha notificado a 1 alumno."              |
+ * | C7| límite 35% (ciclo 6)          | en_riesgo a 3 faltas, mensaje con (35%)     |
+ * | C8| frontera: 25% exacto          | P3(F) por '>' estricto -> nadie notificado  |
+ *
+ * C7 y C8 se añadieron tras la 1ª corrida de mutación (Stryker): la lógica de
+ * límites está DUPLICADA en notifyStudents (l.164-179) y los mutantes
+ * cycle>=6→>6, pct>limit→>= y faltas!==3→true sobrevivían a C1-C6.
  */
 
 const noopEvents = {} as unknown as EventBus;
@@ -110,9 +116,33 @@ describe("CAJA BLANCA · AttendanceRiskService.notifyStudents (HU30)", () => {
 
     expect(captured).toHaveLength(1);
     expect(captured[0].studentId).toBe(9);
+    expect(captured[0].title).toBe("Alerta de inasistencias - Ingenieria de Software");
     expect(captured[0].message).toBe(
       "Estás a 2 falta(s) de alcanzar el límite de inasistencias (25%) en Ingenieria de Software (Sección 801). Tu porcentaje actual es de 21%.",
     );
+  });
+
+  test("C7: ciclo 6 con 30% -> límite 35%, alerta preventiva a 3 faltas (no 'límite superado')", async () => {
+    const { service, captured } = spyService([
+      nrow({ student_id: 11, absent_hours: "30", cycle: 6 }),
+    ]);
+
+    const res = await service.notifyStudents(1);
+
+    expect(res.notified).toBe(1);
+    expect(captured[0].message).toBe(
+      "Estás a 3 falta(s) de alcanzar el límite de inasistencias (35%) en Ingenieria de Software (Sección 801). Tu porcentaje actual es de 30%.",
+    );
+  });
+
+  test("C8: exactamente 25% en ciclo 3 -> NO se notifica (el límite se supera con '>', no '>=')", async () => {
+    const { service, captured } = spyService([nrow({ absent_hours: "25" })]);
+
+    const res = await service.notifyStudents(1);
+
+    expect(captured).toHaveLength(0);
+    expect(res.notified).toBe(0);
+    expect(res.message).toBe("No hay alumnos que notificar.");
   });
 
   test("C5: sección mixta -> createAlerts recibe SOLO impedido + en_riesgo, y el mensaje pluraliza", async () => {
